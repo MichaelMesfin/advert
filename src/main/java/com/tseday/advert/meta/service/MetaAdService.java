@@ -5,12 +5,12 @@ import com.facebook.ads.sdk.APIRequest.DefaultRequestExecutor;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
-import com.tseday.advert.exception.httpclient.Client;
 import com.tseday.advert.meta.MetaCampaignDetails;
 import com.tseday.advert.meta.dto.*;
 import com.tseday.advert.meta.persistance.*;
 import com.tseday.advert.util.Pair;
-import lombok.extern.java.Log;
+import jakarta.json.Json;
+import jakarta.json.JsonArray;
 import org.jetbrains.annotations.NotNull;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -19,12 +19,11 @@ import org.springframework.stereotype.Service;
 
 import java.io.File;
 import java.io.IOException;
-import java.net.URI;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
-import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.StructuredTaskScope;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -46,6 +45,8 @@ public class MetaAdService {
 
     private static final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss-0SSS");
 
+    private final StringTemplate.Processor<jakarta.json.JsonObject, RuntimeException> JSON;
+
     @Value("${meta.accountId}")
     String accountId;
 
@@ -57,13 +58,15 @@ public class MetaAdService {
                          ObjectMapper objectMapper,
                          GeoLocationRepository geoLocationRepository,
                          TargetRepository targetRepository,
-                         CampaignRepository campaignRepository) {
+                         CampaignRepository campaignRepository,
+                         @Qualifier("jsonProcessor") StringTemplate.Processor<jakarta.json.JsonObject, RuntimeException> json) {
         this.apiContext = apiContext;
         adAccountAPIRequest = new APIRequest<>(apiContext, "me", "/adaccounts", "GET", AdAccount.getParser());
         this.objectMapper = objectMapper;
         this.geoLocationRepository = geoLocationRepository;
         this.targetRepository = targetRepository;
         this.campaignRepository = campaignRepository;
+        JSON = json;
     }
 
     public List<String> getCampaignObjectives() {
@@ -100,13 +103,14 @@ public class MetaAdService {
                     createCampaign()
                     .setName(createCampaignRequest.campaignName())
                     .setObjective(createCampaignRequest.objective())
+//                    .setPromotedObject("{\"product_catalog_id\":\"258227100404765\"}")
                     .setStatus(Campaign.EnumStatus.VALUE_PAUSED)
                     .setParam("special_ad_categories", "[]")
                     .execute().fetch();
 
-            campaignRepository.save(new CampaignEntity(campaign.getId(),
-                    campaign.getFieldName(),
-                    CampaignObjectiveEnums.valueOf(campaign.getFieldObjective())));
+//            campaignRepository.save(new CampaignEntity(campaign.getId(),
+//                    campaign.getFieldName(),
+//                    CampaignObjectiveEnums.valueOf(campaign.getFieldObjective())));
 
             return new MetaCampaignDetails(campaign.getFieldName(), campaign.getId(), adAccount.getId(), null);
 
@@ -133,6 +137,11 @@ public class MetaAdService {
             throw new RuntimeException(e);
         }
     }
+
+
+//    public void fetchBehaviours(){
+//
+//    }
 
     public Map<Pair<String, Integer>, List<Map<String, Object>>> getGeoLocations(LocationTargetRequest location) {
 
@@ -169,33 +178,48 @@ public class MetaAdService {
         }
     }
 
-    public List<Map<String, Object>>  fetchInterest(String interest) {
+    public  List<Map<String, Object>> fetchInterest(String interest) {
 
-        DefaultRequestExecutor defaultRequestExecutor = new DefaultRequestExecutor();
+        try (var executor = new StructuredTaskScope.ShutdownOnFailure()) {
 
-        Map<String, Object> requestParams = Map.of(
-                "type", "adinterest",
-                "q", interest,
-                "access_token", apiContext.getAccessToken());
+            List<StructuredTaskScope.Subtask<Map<String, List<Map<String, Object>>>>> subtaskList = Arrays.stream(interest.split(","))
+                    .map(q -> Map.<String, Object>of(
+                            "type", "adinterest",
+                            "q", q,
+                            "access_token", apiContext.getAccessToken()))
+                    .map(requestParams -> executor.fork(() -> {
+                                        Map<String, List<Map<String, Object>>> interestData = objectMapper.readValue(
+                                                getResponseWrapper(new DefaultRequestExecutor(), requestParams).getBody(),
+                                                Map.class);
+                                        return interestData;
+                                    }
 
-        try {
-            var responseWrapper = getResponseWrapper(defaultRequestExecutor, requestParams);
+                            )
+                    )
+                    .toList();
 
-            Map<String, List<Map<String, Object>>> interestData = objectMapper.readValue(responseWrapper.getBody(), Map.class);
+            executor.join();
 
-        return interestData.get("data");
+            return   subtaskList.stream()
+                     .map(StructuredTaskScope.Subtask::get)
+                     .map(m -> m.get("data"))
+                   .flatMap(List::stream)
+                      .map(d -> Map.of(d.get("id").toString(),d.get("name")))
+                     .collect(Collectors.toList());
 
-
-        } catch (APIException e) {
-            throw new RuntimeException(e);
-        } catch (IOException e) {
+        } catch (InterruptedException e) {
             throw new RuntimeException(e);
         }
 
     }
 
+    public List<Pair<String,String>> fetchIndustries(){
+        List<String> matchList = List.of(
+                "6012903126783",
+                "6012903128783",
+                "6012903160983"
+        );
 
-    public Map<String, Object> fetchBehaviours() {
 
         DefaultRequestExecutor defaultRequestExecutor = new DefaultRequestExecutor();
         Map<String, Object> requestParams = Map.of(
@@ -205,7 +229,20 @@ public class MetaAdService {
 
         try {
             var responseWrapper = getResponseWrapper(defaultRequestExecutor, requestParams);
-            return objectMapper.readValue(responseWrapper.getBody(), Map.class);
+            Map<String,List<Map<String,Object>>> map = objectMapper.readValue(responseWrapper.getBody(), Map.class);
+
+            List<Map<String, Object>> data = map.get("data");
+            List<Pair<String, String>> list = data.stream()
+                    .map(d -> new Pair<>(d.get("id").toString(), d.get("name").toString())
+                    )
+                    .filter(p -> {
+                        String key = p.left();
+                        return matchList.stream().anyMatch(key::contains);
+                    })
+
+                    .toList();
+            return list;
+
 
         } catch (APIException e) {
             throw new RuntimeException(e);
@@ -213,6 +250,51 @@ public class MetaAdService {
             throw new RuntimeException(e);
         }
     }
+
+
+    public List<Pair<String, String>>  fetchBehaviours() {
+
+        List<String> matchList = List.of(
+                "travel",
+                "creators",
+                "administrator",
+                "admin",
+                "business",
+                "abroad",
+                "Ethiopia"
+        );
+
+
+        DefaultRequestExecutor defaultRequestExecutor = new DefaultRequestExecutor();
+        Map<String, Object> requestParams = Map.of(
+                "type", "adTargetingCategory",
+                "class", "behaviors",
+                "access_token", apiContext.getAccessToken());
+
+        try {
+            var responseWrapper = getResponseWrapper(defaultRequestExecutor, requestParams);
+            Map<String,List<Map<String,Object>>> map = objectMapper.readValue(responseWrapper.getBody(), Map.class);
+
+            List<Map<String, Object>> data = map.get("data");
+            List<Pair<String, String>> list = data.stream()
+                    .map(d -> new Pair<>(d.get("id").toString(), d.get("name").toString())
+            )
+                    .filter(p -> {
+                        String key = p.right();
+                        return matchList.stream().anyMatch(key::contains);
+                    })
+
+                    .toList();
+            return list;
+
+
+        } catch (APIException e) {
+            throw new RuntimeException(e);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
 
     public String createAdMedia(AdMediaUpload adMediaUpload) {
         AdTypeEnum type = adMediaUpload.type();
@@ -390,53 +472,71 @@ public class MetaAdService {
             Pair<String, String> timeDuration = getTimeDuration();
 
             try(var executor = new StructuredTaskScope<>()){
-                StructuredTaskScope.Subtask<TargetingGeoLocation> targetingGeoLocationSubtask = executor.fork(() -> getTargetingGeoLocation(createAdSetRequest));
 
-                List<StructuredTaskScope.Subtask<List<Map<String, Object>>>> interestSubtask = createAdSetRequest.interest().stream()
-                        .map(interest -> executor.fork(() -> fetchInterest(interest)))
-                        .toList();
+                StructuredTaskScope.Subtask<TargetingGeoLocation> targetingGeoLocationSubtask =
+                        executor.fork(() -> getTargetingGeoLocation(createAdSetRequest));
+
+                StructuredTaskScope.Subtask<List<Pair<String, String>>> industrySubtask = executor.fork(this::fetchIndustries);
+
+
 
 
                 executor.join();
 
-                TargetingGeoLocation targetingGeoLocation = targetingGeoLocationSubtask.get();
 
-                List<IDName> fieldInterests =
-                        interestSubtask.stream()
-                                .map(StructuredTaskScope.Subtask::get)
-                                .flatMap(List::stream)
-                                .map(m -> new IDName().setFieldId(m.get("id").toString())
-                                        .setFieldName(m.get("name").toString()))
-                                .collect(Collectors.toList());
+                List<Map<String, Object>> fetchedInterest = fetchInterest(createAdSetRequest.interest());
+                List<IDName> fieldInterests = fetchedInterest.stream().flatMap(m -> m.entrySet().stream())
+                        .map(m ->  new IDName().setFieldId(m.getKey())
+                                .setFieldName(m.getValue().toString()))
+                        .collect(Collectors.toList());
+
+
+//                StructuredTaskScope.Subtask<List<Pair<String, String>>> behaviourSubTask = executor.fork(this::fetchBehaviours);
+
+//                executor.join();
+
+                TargetingGeoLocation targetingGeoLocation = targetingGeoLocationSubtask.get();
+                List<IDName> industryTargets = industrySubtask.get().stream().map(p -> new IDName().setFieldName(p.right()).setFieldId(p.left()))
+                        .toList();
+//
+//                List<IDName> behaviourTargets = behaviourSubTask.get().stream().map(p -> new IDName().setFieldName(p.right()).setFieldId(p.left()))
+//                        .toList();
 
 
                 AdSet adSet = adAccount.createAdSet()
                         .setName(createAdSetRequest.adSetName())
-                        .setLifetimeBudget(2000L)
-                    .setBidAmount(200L)
+                        .setLifetimeBudget(1500L)
+                    .setBidAmount(300L)
 
                         .setStartTime(timeDuration.left())
                     .setEndTime(timeDuration.right())
                         .setBillingEvent(AdSet.EnumBillingEvent.VALUE_IMPRESSIONS)
-                        .setOptimizationGoal(AdSet.EnumOptimizationGoal.VALUE_REACH)
-//                        .setDestinationType("WHATSAPP")
+                        .setOptimizationGoal(AdSet.EnumOptimizationGoal.VALUE_POST_ENGAGEMENT)
                         .setCampaignId(campaign.getId())
-                        .setPromotedObject(
-                                STR. """
-                            {
-                            "product_set_id": \{ createAdSetRequest.pageId() }
-                            }
-                            """
-
-                        )
+                        .setBidStrategy(AdSet.EnumBidStrategy.VALUE_LOWEST_COST_WITH_BID_CAP)
+                        .setDestinationType("ON_POST")
+//                        .setPromotedObject(
+//                                STR. """
+//                            {
+//                            "page_id":\{ createAdSetRequest.pageId() }
+//                            }
+//                            """
+//
+//                        )
                         .setTargeting(
                                 new Targeting()
-                                        .setFieldAgeMax(55L)
+                                        .setFieldAgeMax(65L)
                                         .setFieldAgeMin(18L)
-                                        .setFieldDevicePlatforms(List.of(Targeting.EnumDevicePlatforms.VALUE_MOBILE,
-                                                Targeting.EnumDevicePlatforms.VALUE_DESKTOP))
-                                        .setFieldFacebookPositions(List.of("feed"))
-                                        .setFieldFlexibleSpec(List.of(new FlexibleTargeting().setFieldInterests(fieldInterests)))
+                                        .setFieldDevicePlatforms(List.of(Targeting.EnumDevicePlatforms.VALUE_MOBILE
+                                                ,
+                                                Targeting.EnumDevicePlatforms.VALUE_DESKTOP
+                                                )
+                                        )
+//                                        .setFieldFacebookPositions(List.of("feed"))
+                                        .setFieldFlexibleSpec(List.of(
+                                                new FlexibleTargeting().setFieldInterests(fieldInterests)
+                                                        .setFieldIndustries(industryTargets)
+                                                ))
                                         .setFieldGenders(List.of(1L, 0L))
                                         .setFieldGeoLocations(targetingGeoLocation)
                                         .setFieldPublisherPlatforms(List.of("facebook","audience_network"))
@@ -489,9 +589,9 @@ public class MetaAdService {
 
     private Pair<String, String> getTimeDuration() {
 
-        LocalDateTime startTime = LocalDateTime.now().plusHours(2);
+        LocalDateTime startTime = LocalDateTime.now().plusMinutes(30);
 
-        LocalDateTime endTime = startTime.plusDays(3);
+        LocalDateTime endTime = startTime.plusDays(10);
 
         return new Pair<>(String.valueOf(startTime.atZone(ZoneId.systemDefault()).toEpochSecond()),
                 String.valueOf(endTime.atZone(ZoneId.systemDefault()).toEpochSecond())
@@ -567,6 +667,48 @@ public class MetaAdService {
         }
     }
 
+    public String updateAd(String creativeId) {
+        try {
+
+
+            Ad execute = new Ad("120201281162870117", apiContext).update()
+                    .setCreative(new AdCreative(creativeId,apiContext).get().requestAllFields().execute())
+
+
+                    .execute();
+          return   "successs";
+//            AdAccount adAccount = new AdAccount(accountId, apiContext);
+//
+//            Campaign campaign = adAccount.getCampaigns().requestAllFields().execute().stream()
+//                    .filter(c -> c.getFieldName().equals(createAdRequest.campaignName()))
+//                    .findFirst().orElseThrow(() -> new IllegalArgumentException("campaign doesn't exist"));
+//
+//            APINodeList<AdSet> adSets = campaign.getAdSets().requestIdField().requestNameField().execute();
+//
+//            String adSetId = adSets.stream()
+//                    .filter(adSet -> adSet.getFieldName().equals(createAdRequest.adSetName()))
+//                    .findFirst()
+//                    .map(AdSet::getId)
+//                    .orElseThrow(() -> new IllegalArgumentException(String.format("adset with name s% doesn't exist",
+//                            createAdRequest.adSetName())));
+//
+//
+//            Ad ad = adAccount
+//                    .createAd()
+//
+//                    .setName(createAdRequest.adName())
+//                    .setAdsetId(adSetId)
+//                    .setCreative(new AdCreative(createAdRequest.adCreativeId(),apiContext).get().requestAllFields().execute())
+//                    .setStatus(Ad.EnumStatus.VALUE_PAUSED)
+//                    .execute();
+//
+//            return ad.getId();
+
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
 
     public String createAd(CreateAdRequest createAdRequest) {
         try {
@@ -592,9 +734,7 @@ public class MetaAdService {
 
                     .setName(createAdRequest.adName())
                     .setAdsetId(adSetId)
-                    .setCreative(new AdCreative().setFieldId(createAdRequest.adCreativeId())
-                    )
-
+                    .setCreative(new AdCreative(createAdRequest.adCreativeId(),apiContext).get().requestAllFields().execute())
                     .setStatus(Ad.EnumStatus.VALUE_PAUSED)
                     .execute();
 
@@ -607,7 +747,7 @@ public class MetaAdService {
 
 
     private APIRequest.ResponseWrapper getResponseWrapper(DefaultRequestExecutor defaultRequestExecutor, Map<String, Object> requestParams) throws APIException, IOException {
-        return defaultRequestExecutor.sendGet(" https://graph.facebook.com/v17.0/search",
+        return defaultRequestExecutor.sendGet(" https://graph.facebook.com/v18.0/search",
                 requestParams,
                 apiContext
         );
@@ -616,66 +756,301 @@ public class MetaAdService {
     public List<ProductDetails> createBatchProductItems() {
 
 
-        try (var executor = new StructuredTaskScope<ProductDetails>()) {
+        try (var executor =new StructuredTaskScope.ShutdownOnFailure()) {
             ProductCatalog productCatalog = new ProductCatalog(productCatalogId, apiContext);
 
-
+//
             List<StructuredTaskScope.Subtask<ProductDetails>> subtasks = Stream.of(
-                            new ProductDetails("Cerave Moisturizing Lotion AM/PM", "270000", "/home/michael/Documents/ora/image/p1.jpg", "original form usa"),
-                            new ProductDetails("The Ordinary Glycolic acid", "350000", "/home/michael/Documents/ora/image/p2.jpg", "original form usa"),
-                            new ProductDetails("Sephora Lipstick", "270000", "/home/michael/Documents/ora/image/p3.jpg", "original form usa"),
-                            new ProductDetails("LA ROCHE POSRY Sunscreen", "350000", "/home/michael/Documents/ora/image/p4.jpg", "original form usa"),
-                            new ProductDetails("Millie Rosemary Oil", "220000", "/home/michael/Documents/ora/image/p5.jpg", "original form usa"),
-                            new ProductDetails("Zara Perfume", "450000", "/home/michael/Documents/ora/image/p6.jpg", "original form usa"),
-                            new ProductDetails("Victoria Secrets Splash", "250000", "/home/michael/Documents/ora/image/p7.jpg", "original form usa"),
-                            new ProductDetails("The Ordinary Serum", "270000", "/home/michael/Documents/ora/image/p8.jpg", "original form usa"),
-                            new ProductDetails("La Roche-posay", "370000", "/home/michael/Documents/ora/image/p9.jpg", "original form usa"),
-                            new ProductDetails("Parental 150 Softgel", "450000", "/home/michael/Documents/ora/image/p10.jpg", "original form usa")
 
-                    ).map(p -> executor.fork(() -> new ProductDetails(p.name(), p.price(), createAdMedia(new AdMediaUpload(p.imageUrl(), AdTypeEnum.IMAGE)), p.description())))
+                    new ProductDetails("ቦታው: ሀይሌ ጋርመንት", "2600000000",
+
+                            "/home/michael/Documents/experts_house/yabu/selected/1S.jpg",
+
+                            STR."""
+                                     desc
+                                    """, "https://www.facebook.com/122107049000136215/posts/122111779844136215"
+                    )
+
+            )
+
+                    .map(p -> executor.fork(() ->
+
+                    new ProductDetails(p.name(),
+                            p.price(),
+                            createAdMedia(new AdMediaUpload(p.mainImage(), AdTypeEnum.IMAGE)),
+                            p.description(),p.url())
+
+            )).toList();
+
+            executor.join().throwIfFailed();
+
+
+            List<ProductDetails> productDetailsList = subtasks.stream()
+                    .map(StructuredTaskScope.Subtask::get)
                     .toList();
 
-            executor.join();
 
-            List<StructuredTaskScope.Subtask<ProductDetails>> subtaskCreateProductCatalougue = subtasks.stream()
-                    .map(StructuredTaskScope.Subtask::get)
-                    .map(p -> executor.fork(() -> new ProductDetails(productCatalog.createProduct()
-                            .setName(p.name())
-                            .setImageUrl(p.imageUrl())
-                            .setAvailability(ProductItem.EnumAvailability.VALUE_AVAILABLE_FOR_ORDER)
-                            .setDescription(p.description())
-                            .setUrl(p.imageUrl())
-                            .setRetailerId("ora"+Math.random())
-                            .setBrand("custom")
-                            .setCurrency("ETB")
-                            .setPrice(p.price())
-                            .execute().getId(), p.name(), p.price(), p.imageUrl(), p.description()))
+            List<StructuredTaskScope.Subtask<ProductDetails>> subtaskList = productDetailsList.stream()
+                    .map(p -> executor.fork(() -> {
+                                try {
+                                    productCatalog.createProduct()
+                                            .setName(p.name())
+                                            .setImageUrl(p.mainImage())
+//                                            .setAdditionalImageUrls(p.additonalImages().subList(1, p.additonalImages().size()))
+                                            .setAvailability(ProductItem.EnumAvailability.VALUE_IN_STOCK)
+                                            .setDescription(p.description())
+                                            .setRetailerId(STR."experts\{Math.random()}")
+                                            .setBrand("CUSTOM")
+                                            .setCurrency("ETB")
+//                                            .setCategory("c")
+                                            .setUrl(p.url())
+                                            .setPrice(p.price()).execute().getId();
+                                    return new ProductDetails(p.name(), p.price(), p.mainImage(), p.description(),p.url());
+                                } catch (Exception e) {
+                                    throw new RuntimeException(e.getMessage());
+                                }
+                            })
                     ).toList();
+//
+            executor.join().throwIfFailed();
 
-            executor.join();
-
-            return subtaskCreateProductCatalougue.stream()
+            return subtaskList.stream()
                     .map(StructuredTaskScope.Subtask::get)
                     .collect(Collectors.toList());
+
 
         } catch (Exception e) {
             e.printStackTrace();
             throw new RuntimeException(e.getMessage());
         }
-
     }
 
-    public String createProductSet(String name) {
+    public List<String> updateProductItems(){
+//        return getCategories();
+        return updateSetProductType();
+//        try(var executor = new StructuredTaskScope.ShutdownOnFailure()){
+//
+////            ProductCatalog productCatalog = new ProductCatalog(productCatalogId, apiContext);
+//
+//            List<ProductItem> productItems = new ProductSet("314373991467477", apiContext).getProducts().execute().stream().toList();
+//
+//            Map<String, String> idImageMap = Map.of("6453008064803029", "/home/michael/Documents/experts_house/global/g3.jpg",
+//
+//
+//                    "6684367151690788", "/home/michael/Documents/experts_house/meskel_flower/mf2.jpg",
+//
+//                    "7818666151495802", "/home/michael/Documents/experts_house/round_meskel_flower/selected/rmf1.jpg");
+//
+//            List<StructuredTaskScope.Subtask<ProductItem>> subtasks = productItems.stream()
+//                    .map(ProductItem::getId)
+//                    .filter(idImageMap::containsKey)
+//                    .map(i -> executor.fork(() -> new ProductItem(i, apiContext)
+//                            .update()
+//                            .setImageUrl(createAdMedia(new AdMediaUpload(idImageMap.get(i),AdTypeEnum.IMAGE)))
+//                            .execute()))
+//                    .toList();
+//
+//            executor.join();
+//
+//           return subtasks.stream().map(StructuredTaskScope.Subtask::get)
+//                   .map(p -> {
+//                       try {
+//                          return p.get().requestImageUrlField().execute().getFieldImageUrl();
+//                       } catch (APIException e) {
+//                           throw new RuntimeException(e);
+//                       }
+//                   })
+//                    .collect(Collectors.toList());
+//        }
+//        catch (Exception e){
+//            throw new RuntimeException(e.getMessage());
+//        }
+    }
+
+    public List<String> updateSetProductType(){
+        try(var executor = new StructuredTaskScope.ShutdownOnFailure()){
+
+
+            Map<Integer, String> catMap = Map.of(0, "houses",
+                    1, "apartments",
+                    2, "cars",
+                    3, "building"
+
+            );
+
+//            ProductCatalog productCatalog = new ProductCatalog(productCatalogId, apiContext);
+
+            List<ProductItem> productItems = new ProductSet("1058170845332950", apiContext).getProducts().execute().stream().toList();
+
+//            Map<String, String> idImageMap = Map.of("6453008064803029", "/home/michael/Documents/experts_house/global/g3.jpg",
+//
+//
+//                    "6684367151690788", "/home/michael/Documents/experts_house/meskel_flower/mf2.jpg",
+//
+//                    "7818666151495802", "/home/michael/Documents/experts_house/round_meskel_flower/selected/rmf1.jpg");
+
+//            Map<String, String> typeMap = Map.of("G+1", "Building", "ሚሸጥ ባለ ሁለት መኝታ አፓርታማ", "Apartments");
+
+            List<StructuredTaskScope.Subtask<ProductItem>> subtasks = IntStream.range(0,productItems.size())
+
+//                    .filter( p -> typeMap.containsKey(p.getFieldName()))
+                    .mapToObj(i -> executor.fork(() -> new ProductItem(productItems.get(i).getId(), apiContext)
+                            .update()
+                            .setProductType(catMap.get(i))
+//                            .setCategory("cat"+Math.random())
+                            .execute()))
+                    .toList();
+
+            executor.join();
+
+            return subtasks.stream().map(StructuredTaskScope.Subtask::get)
+                    .map(ProductItem::toString)
+                    .collect(Collectors.toList());
+        }
+        catch (Exception e){
+            throw new RuntimeException(e.getMessage());
+        }
+    }
+
+    public List<String> getCategories(){
 
         try {
-            ProductSet productSet = new ProductCatalog(productCatalogId, apiContext).
-                    createProductSet()
-                    .setName("ora_set")
-                    .setFilter(
-                            "{\"description\":{\"i_contains\":\"original form usa\"}}")
-                    .execute();
+            ProductCatalog productCatalog = new ProductCatalog(productCatalogId, apiContext);
+//
+//            .getCategories()
+//                    .execute().stream()
+//                    .collect(Collectors.groupingBy(ProductCatalogCategory::getFieldCriteriaValue))
+//
 
-            return productSet.getId();
+            ProductCatalogCategory execute = productCatalog.createCategory().setData(
+                    List.of(
+                            Map.of(
+                                    "categorization_criteria", "product_type",
+                                    "criteria_value", "houses",
+                                    "name", "houses",
+                                    "description", "Description",
+                                    "destination_uri", "https://developers.facebook.com/docs/marketing-api/advantage-catalog-ads/get-started"
+                            ),
+
+                            Map.of(
+                                    "categorization_criteria", "product_type",
+                                    "criteria_value", "apartments",
+                                    "name", "apartments",
+                                    "description", "Description",
+                                    "destination_uri", "https://developers.facebook.com/docs/marketing-api/advantage-catalog-ads/get-started"
+                            ),
+
+                            Map.of(
+                                    "categorization_criteria", "product_type",
+                                    "criteria_value", "cars",
+                                    "name", "cars",
+                                    "description", "Description",
+                                    "destination_uri", "https://developers.facebook.com/docs/marketing-api/advantage-catalog-ads/get-started"
+                            ),
+
+                            Map.of(
+                                    "categorization_criteria", "product_type",
+                                    "criteria_value", "building",
+                                    "name", "building",
+                                    "description", "Description",
+                                    "destination_uri", "https://developers.facebook.com/docs/marketing-api/advantage-catalog-ads/get-started"
+                            )
+
+
+                    )).execute();
+
+            return List.of(execute.getId());
+//           return productCatalog.getCategories().
+//                    setCategorizationCriteria(ProductCatalogCategory.EnumCategorizationCriteria.VALUE_PRODUCT_TYPE)
+//                    .requestCriteriaValueField(true)
+//                    .requestNameField(true)
+//                                .execute()
+//                                .stream()
+//                                .map(p -> STR."\{p.getFieldCriteriaValue()} , \{p.getFieldName()}")
+//                                .collect(Collectors.toList());
+
+
+        } catch (Exception e) {
+            throw new RuntimeException(e.getMessage());
+        }
+    }
+
+
+    public List<String> createProductSet(String name) {
+
+
+
+
+
+            try(var executor  = new StructuredTaskScope.ShutdownOnFailure()){
+                List<StructuredTaskScope.Subtask<ProductItem>> subtasks = new ProductSet("305146685239862", apiContext).getProducts().execute().stream()
+                        .map(p -> executor.fork(() -> p.get().requestOrderingIndexField(true)
+                                .requestNameField(true)
+                                .requestPriceField(true)
+                                .requestPriceField(true)
+                                .execute())
+
+
+                        ).toList();
+
+                executor.join();
+
+
+//
+                Map<Boolean, List<ProductItem>> cars = subtasks.stream()
+                        .map(StructuredTaskScope.Subtask::get)
+                        .filter(p -> p.getFieldProductType() != null)
+                        .collect(Collectors.partitioningBy(p -> p.getFieldProductType().equals("CARS")));
+
+
+                List<ProductItem> productItems = cars.get(false);
+                productItems.addAll(cars.get(true));
+
+        IntStream.range(0, productItems.size())
+                        .forEach(i -> {
+                            try {
+                                 productItems.get(i).update()
+                                                .setOrderingIndex((long) i)
+                                .execute();
+                            } catch (APIException e) {
+                                throw new RuntimeException(e);
+                            }
+                        });
+
+                List<StructuredTaskScope.Subtask<ProductItem>> subtaskList = new ProductSet("314373991467477", apiContext).getProducts().execute().stream()
+                        .map(p -> executor.fork(() -> p.get()
+                                .requestOrderingIndexField(true)
+                                .requestNameField(true)
+                                .execute())
+
+
+                        ).toList();
+
+                executor.join();
+
+              return   subtaskList.stream()
+                        .map(StructuredTaskScope.Subtask::get)
+                        .map( p -> STR."""
+                                \{p.getFieldName()}
+                                \{p.getFieldOrderingIndex()}
+                                """).toList();
+
+
+
+//
+
+//                ProductSet productSet = new ProductCatalog(productCatalogId, apiContext).
+//                    createProductSet()
+//                    .setName("sortedExperts4")
+////                        .set
+////                    .setOrderingInfo(list)
+//                    .setFilter(
+//                          JSON."""
+//                                  "price": {"gt": 20000000}
+//                                  """.toString())
+//                    .execute();
+//
+//            return List.of(productSet.getId());
         } catch (Exception e) {
             throw new RuntimeException(e.getMessage());
         }

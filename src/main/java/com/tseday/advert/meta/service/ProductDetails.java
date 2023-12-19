@@ -1,8 +1,10 @@
 package com.tseday.advert.meta.service;
 
-public record ProductDetails(String id , String name, String price, String imageUrl, String description) {
+public record ProductDetails(String id , String name, String price, String mainImage, String description,String url) {
 
-    public ProductDetails(String name, String price, String imageUrl, String description){
-        this(null,name,price,imageUrl,description);
+    public ProductDetails(String name, String price, String mainImage, String description,String url){
+        this(null,name,price,mainImage,description,url);
     }
+
+
 }

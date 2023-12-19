@@ -1,9 +1,11 @@
 package com.tseday.advert.meta;
 
+import com.facebook.ads.sdk.IDName;
 import com.tseday.advert.meta.dto.*;
 import com.tseday.advert.meta.service.AdCreativeService;
 import com.tseday.advert.meta.service.MetaAdService;
 import com.tseday.advert.meta.service.ProductDetails;
+import com.tseday.advert.util.Pair;
 import com.tseday.advert.util.WebScraper;
 import org.springframework.context.annotation.Bean;
 import org.springframework.stereotype.Component;
@@ -51,8 +53,13 @@ public class MetaFunction {
     }
 
     @Bean
-    public Supplier<Map<String,Object>> fetchBehaviour(){
+    public Supplier< List<Pair<String, String>> > fetchBehaviour(){
         return metaAdService::fetchBehaviours;
+    }
+
+    @Bean
+    public Supplier< List<Pair<String, String>> > fetchIndustries(){
+        return metaAdService::fetchIndustries;
     }
 
     @Bean
@@ -114,6 +121,12 @@ public class MetaFunction {
         return metaAdService::createBatchProductItems;
     }
 
+
+    @Bean
+    Supplier<List<String>> updateProductItems(){
+        return metaAdService::updateProductItems;
+    }
+
     @Bean
     Supplier< List<String> > createCanvas(){
         return adCreativeService::createCanvas;
@@ -131,7 +144,7 @@ public class MetaFunction {
     }
 
     @Bean
-    Function<String,String> createProductSet(){
+    Function<String,List<String>> createProductSet(){
         return metaAdService::createProductSet;
     }
 
@@ -146,7 +159,7 @@ public class MetaFunction {
     }
 
     @Bean
-    Supplier<String> createMultiPhotoPost(){
+    Supplier<List<String>> createMultiPhotoPost(){
         return adCreativeService::createMultiPhotoPost;
     }
 
@@ -159,6 +172,11 @@ public class MetaFunction {
     @Bean
     Function<String,String> pagePostAd(){
         return adCreativeService::createAdFromPost;
+    }
+
+
+    @Bean Function<List<String>,String> publishPost(){
+        return adCreativeService::publishPosts;
     }
 
     @Bean
