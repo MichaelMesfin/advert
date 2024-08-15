@@ -1,8 +1,8 @@
 package com.tseday.advert.meta;
 
-import com.facebook.ads.sdk.IDName;
 import com.tseday.advert.meta.dto.*;
 import com.tseday.advert.meta.service.AdCreativeService;
+import com.tseday.advert.meta.service.AdNetworkAnalysis;
 import com.tseday.advert.meta.service.MetaAdService;
 import com.tseday.advert.meta.service.ProductDetails;
 import com.tseday.advert.util.Pair;
@@ -11,7 +11,6 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
-import java.util.Map;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -23,9 +22,12 @@ public class MetaFunction {
 
     private final AdCreativeService adCreativeService;
 
-    public MetaFunction(MetaAdService metaAdService, AdCreativeService adCreativeService) {
+    private final AdNetworkAnalysis adNetworkAnalysis;
+
+    public MetaFunction(MetaAdService metaAdService, AdCreativeService adCreativeService, AdNetworkAnalysis adNetworkAnalysis) {
         this.metaAdService = metaAdService;
         this.adCreativeService = adCreativeService;
+        this.adNetworkAnalysis = adNetworkAnalysis;
     }
 
     @Bean
@@ -48,7 +50,7 @@ public class MetaFunction {
     }
 
     @Bean
-    public Function<String,Object> fetInterest(){
+    public Function<List<String>,Object> fetInterest(){
         return metaAdService::fetchInterest;
     }
 
@@ -83,8 +85,8 @@ public class MetaFunction {
     }
 
     @Bean
-    public Supplier<String> createCarouselAdCreative(){
-        return adCreativeService::createCarouselAdCreative;
+    public Supplier<String> createCanvasCollectionAd(){
+        return adCreativeService::createCanvasCollectionAd;
     }
 
 //    @Bean
@@ -163,10 +165,6 @@ public class MetaFunction {
         return adCreativeService::createMultiPhotoPost;
     }
 
-    @Bean
-    Supplier<List<String>> getPhotos(){
-        return  adCreativeService::resizeImage;
-    }
 
 
     @Bean
@@ -183,4 +181,56 @@ public class MetaFunction {
     Supplier<String> extract(){
         return WebScraper::extract;
     }
+
+    @Bean
+    Supplier<Object> getAnalytics(){
+        return adNetworkAnalysis::getAnalytics;
+    }
+
+    @Bean
+    Supplier<String> createAudience(){
+        return adNetworkAnalysis::createAudience;
+    }
+
+    @Bean
+    Supplier<String> getAudience() {
+     return    () -> {
+         adNetworkAnalysis.getAudience();
+         return "success";
+        };
+    }
+
+
+    @Bean
+    Supplier<String> createLookAlikeAudience(){
+        return adNetworkAnalysis::createLookAlikeAudience;
+    }
+
+    @Bean
+    Supplier<String> getLookAlikeAudience(){
+        return adNetworkAnalysis::getLookAlikeAudience;
+    }
+
+    @Bean
+    Supplier<String> getPreview(){
+        return adCreativeService::generatePreview;
+    }
+
+
+   @Bean
+    Supplier<String> createSingleImagePost(){
+        return adCreativeService::createSingleImagePost;
+    }
+    
+    @Bean
+    Supplier<String> createVideoPost(){
+        return adCreativeService::createVideoPost;
+    }
+    
+       
+    @Bean
+    Supplier<String> createVideoAd(){
+        return adCreativeService::videoAd;
+    }
+    
 }

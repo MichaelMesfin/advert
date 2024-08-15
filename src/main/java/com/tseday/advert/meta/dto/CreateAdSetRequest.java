@@ -6,7 +6,7 @@ public record CreateAdSetRequest(String campaignName,
                                  String adSetName,
                                  AdSetLocationTargetRequest locationTargetRequest,
 
-                                 String interest,
+                                 List<String> interest,
 
                                  String pageId
 

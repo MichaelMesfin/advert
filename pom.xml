@@ -63,8 +63,9 @@
 		<dependency>
 			<groupId>com.facebook.business.sdk</groupId>
 			<artifactId>facebook-java-business-sdk</artifactId>
-			<version>18.0.2</version>
+			<version>19.0.0</version>
 		</dependency>
+
 
 		<!-- https://mvnrepository.com/artifact/jakarta.json/jakarta.json-api -->
 		<dependency>
@@ -137,15 +138,16 @@
 					</excludes>
 				</configuration>
 			</plugin>
-			<plugin>
-				<groupId>org.apache.maven.plugins</groupId>
-				<artifactId>maven-compiler-plugin</artifactId>
-				<configuration>
-					<source>21</source>
-					<target>21</target>
-					<compilerArgs>--enable-preview</compilerArgs>
-				</configuration>
-			</plugin>
+		 <plugin>
+		  <groupId>org.apache.maven.plugins</groupId>
+		  <artifactId>maven-compiler-plugin</artifactId>
+		  <configuration>
+		   <arg>--enable-preview</arg>
+		   <compilerArgs>
+		    <arg>--enable-preview</arg>
+		   </compilerArgs>
+		  </configuration>
+		 </plugin>
 		</plugins>
 	</build>
 

@@ -9,8 +9,6 @@ import com.tseday.advert.meta.MetaCampaignDetails;
 import com.tseday.advert.meta.dto.*;
 import com.tseday.advert.meta.persistance.*;
 import com.tseday.advert.util.Pair;
-import jakarta.json.Json;
-import jakarta.json.JsonArray;
 import org.jetbrains.annotations.NotNull;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -23,7 +21,6 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
-import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.StructuredTaskScope;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -45,8 +42,6 @@ public class MetaAdService {
 
     private static final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss-0SSS");
 
-    private final StringTemplate.Processor<jakarta.json.JsonObject, RuntimeException> JSON;
-
     @Value("${meta.accountId}")
     String accountId;
 
@@ -66,7 +61,6 @@ public class MetaAdService {
         this.geoLocationRepository = geoLocationRepository;
         this.targetRepository = targetRepository;
         this.campaignRepository = campaignRepository;
-        JSON = json;
     }
 
     public List<String> getCampaignObjectives() {
@@ -139,11 +133,7 @@ public class MetaAdService {
     }
 
 
-//    public void fetchBehaviours(){
-//
-//    }
-
-    public Map<Pair<String, Integer>, List<Map<String, Object>>> getGeoLocations(LocationTargetRequest location) {
+    public List<Map<String, Object>> getGeoLocations(LocationTargetRequest location) {
 
 
         Map<String, Object> requestParams = Stream.of(new Pair<>(GeoLocationType.CITY, location.city()),
@@ -161,15 +151,15 @@ public class MetaAdService {
             Map<String, List<Map<String, Object>>> geLocationDetail = objectMapper.readValue(responseWrapper.getBody(), Map.class);
 
 
-            return geLocationDetail.get("data")
-                    .stream()
-                    .collect(Collectors.collectingAndThen(
-                            Collectors.partitioningBy(d -> d.get("geo_hierarchy_level") == null),
-                            m -> m.get(true).stream()
-                                    .filter(d -> d.get("type").equals("city"))
-                                    .collect(Collectors.groupingBy(d -> new Pair<>(d.get("region").toString(),
-                                            (Integer) d.get("region_id"))))
-                    ));
+            return geLocationDetail.get("data");
+//                    .stream()
+//                    .collect(Collectors.collectingAndThen(
+//                            Collectors.partitioningBy(d -> d.get("geo_hierarchy_level") == null),
+//                            m -> m.get(true).stream()
+//                                    .filter(d -> d.get("type").equals("country"))
+//                                    .collect(Collectors.groupingBy(d -> new Pair<>(d.get("region").toString(),
+//                                            (Integer) d.get("region_id"))))
+//                    ));
 
         } catch (APIException e) {
             throw new RuntimeException(e);
@@ -178,11 +168,11 @@ public class MetaAdService {
         }
     }
 
-    public  List<Map<String, Object>> fetchInterest(String interest) {
+    public List<Map<String, Object>> fetchInterest(List<String> interest) {
 
         try (var executor = new StructuredTaskScope.ShutdownOnFailure()) {
 
-            List<StructuredTaskScope.Subtask<Map<String, List<Map<String, Object>>>>> subtaskList = Arrays.stream(interest.split(","))
+            List<StructuredTaskScope.Subtask<Map<String, List<Map<String, Object>>>>> subtaskList = interest.stream().map(String::trim)
                     .map(q -> Map.<String, Object>of(
                             "type", "adinterest",
                             "q", q,
@@ -200,12 +190,12 @@ public class MetaAdService {
 
             executor.join();
 
-            return   subtaskList.stream()
-                     .map(StructuredTaskScope.Subtask::get)
-                     .map(m -> m.get("data"))
-                   .flatMap(List::stream)
-                      .map(d -> Map.of(d.get("id").toString(),d.get("name")))
-                     .collect(Collectors.toList());
+            return subtaskList.stream()
+                    .map(StructuredTaskScope.Subtask::get)
+                    .map(m -> m.get("data"))
+                    .flatMap(List::stream)
+                    .map(d -> Map.of(d.get("id").toString(), d.get("name")))
+                    .collect(Collectors.toList());
 
         } catch (InterruptedException e) {
             throw new RuntimeException(e);
@@ -213,7 +203,7 @@ public class MetaAdService {
 
     }
 
-    public List<Pair<String,String>> fetchIndustries(){
+    public List<Pair<String, String>> fetchIndustries() {
         List<String> matchList = List.of(
                 "6012903126783",
                 "6012903128783",
@@ -229,7 +219,7 @@ public class MetaAdService {
 
         try {
             var responseWrapper = getResponseWrapper(defaultRequestExecutor, requestParams);
-            Map<String,List<Map<String,Object>>> map = objectMapper.readValue(responseWrapper.getBody(), Map.class);
+            Map<String, List<Map<String, Object>>> map = objectMapper.readValue(responseWrapper.getBody(), Map.class);
 
             List<Map<String, Object>> data = map.get("data");
             List<Pair<String, String>> list = data.stream()
@@ -252,7 +242,7 @@ public class MetaAdService {
     }
 
 
-    public List<Pair<String, String>>  fetchBehaviours() {
+    public List<Pair<String, String>> fetchBehaviours() {
 
         List<String> matchList = List.of(
                 "travel",
@@ -273,16 +263,16 @@ public class MetaAdService {
 
         try {
             var responseWrapper = getResponseWrapper(defaultRequestExecutor, requestParams);
-            Map<String,List<Map<String,Object>>> map = objectMapper.readValue(responseWrapper.getBody(), Map.class);
+            Map<String, List<Map<String, Object>>> map = objectMapper.readValue(responseWrapper.getBody(), Map.class);
 
             List<Map<String, Object>> data = map.get("data");
             List<Pair<String, String>> list = data.stream()
                     .map(d -> new Pair<>(d.get("id").toString(), d.get("name").toString())
-            )
-                    .filter(p -> {
-                        String key = p.right();
-                        return matchList.stream().anyMatch(key::contains);
-                    })
+                    )
+//                    .filter(p -> {
+//                        String key = p.right();
+//                        return matchList.stream().anyMatch(key::contains);
+//                    })
 
                     .toList();
             return list;
@@ -306,7 +296,7 @@ public class MetaAdService {
                         .addUploadFile(url.split("/")[4]
 
                                 , file)
-                        .execute().getFieldUrl();
+                        .execute().getFieldHash();
                 case VIDEO -> new AdAccount(accountId, apiContext).createAdVideo()
                         .setSource(file)
                         .execute()
@@ -323,7 +313,7 @@ public class MetaAdService {
         String endOffset = response.get("end_offset").getAsString();
 
         if (startOffset.equals(endOffset)) {
-            System.out.println(STR. "start_offset = \{ startOffset },  end_offset = \{ endOffset }" );
+            System.out.println(STR."start_offset = \{startOffset},  end_offset = \{endOffset}");
             adAccount.createAdVideo().setUploadPhase(AdVideo.EnumUploadPhase.VALUE_FINISH)
                     .setUploadSessionId(uploadSessionId).execute();
         } else {
@@ -411,8 +401,8 @@ public class MetaAdService {
                     .filter(c -> c.getFieldName().equals(adSetRequest.campaignName()))
                     .findFirst().orElseThrow(() ->
                             new IllegalArgumentException(
-                                    STR. """
-                                    campaign \{ adSetRequest.campaignName() } doesn't exist
+                                    STR."""
+                                    campaign \{adSetRequest.campaignName()} doesn't exist
                                    """
                             ));
 
@@ -422,8 +412,8 @@ public class MetaAdService {
                     .findFirst()
                     .orElseThrow(() ->
                             new IllegalArgumentException(
-                                    STR. """
-                                            adset \{ adSetRequest.adSetName() } doesn't exist
+                                    STR."""
+                                            adset \{adSetRequest.adSetName()} doesn't exist
                                             """
                             ));
 
@@ -464,6 +454,13 @@ public class MetaAdService {
     public String createAdSet(CreateAdSetRequest createAdSetRequest) {
         try {
             AdAccount adAccount = new AdAccount(accountId, apiContext);
+            
+            
+            List<String> countryCode = List.of("ET","AE","LB","BH","KW","SA","QA","JO",
+                    
+                    
+                    "OM","TR"
+            );
 
             Campaign campaign = adAccount.getCampaigns().requestAllFields().execute().stream()
                     .filter(c -> c.getFieldName().equals(createAdSetRequest.campaignName()))
@@ -471,91 +468,137 @@ public class MetaAdService {
 
             Pair<String, String> timeDuration = getTimeDuration();
 
-            try(var executor = new StructuredTaskScope<>()){
-
-                StructuredTaskScope.Subtask<TargetingGeoLocation> targetingGeoLocationSubtask =
-                        executor.fork(() -> getTargetingGeoLocation(createAdSetRequest));
-
-                StructuredTaskScope.Subtask<List<Pair<String, String>>> industrySubtask = executor.fork(this::fetchIndustries);
-
+            try (var executor = new StructuredTaskScope<>()) {
+//                StructuredTaskScope.Subtask<TargetingGeoLocation> targetingGeoLocationSubtask =
+//                        executor.fork(() -> getTargetingGeoLocation(createAdSetRequest));
+//
+//                StructuredTaskScope.Subtask<List<Pair<String, String>>> industrySubtask = executor.fork(this::fetchIndustries);
 
 
-
-                executor.join();
-
+//                executor.join();
 
                 List<Map<String, Object>> fetchedInterest = fetchInterest(createAdSetRequest.interest());
                 List<IDName> fieldInterests = fetchedInterest.stream().flatMap(m -> m.entrySet().stream())
-                        .map(m ->  new IDName().setFieldId(m.getKey())
+                        .map(m -> new IDName().setFieldId(m.getKey())
                                 .setFieldName(m.getValue().toString()))
                         .collect(Collectors.toList());
 
+//                TargetingGeoLocation targetingGeoLocation = new TargetingGeoLocation().setFieldRegions(
+//
+//                        List.of(
+//                                new TargetingGeoLocationRegion()
+//                                        .setFieldName("Tennessee")
+//                                        .setFieldKey("3885")
+//                                        .setFieldCountry("US"),
+//
+//                                new TargetingGeoLocationRegion()
+//                                        .setFieldName("Delaware")
+//                                        .setFieldKey("3850")
+//                                        .setFieldCountry("US"),
+//
+//                                new TargetingGeoLocationRegion()
+//                                        .setFieldName("Wisconsin")
+//                                        .setFieldKey("3892")
+//                                        .setFieldCountry("US")
+//                        )
+//
+//                );
 
 //                StructuredTaskScope.Subtask<List<Pair<String, String>>> behaviourSubTask = executor.fork(this::fetchBehaviours);
 
 //                executor.join();
-
-                TargetingGeoLocation targetingGeoLocation = targetingGeoLocationSubtask.get();
-                List<IDName> industryTargets = industrySubtask.get().stream().map(p -> new IDName().setFieldName(p.right()).setFieldId(p.left()))
-                        .toList();
 //
+//                TargetingGeoLocation targetingGeoLocation = targetingGeoLocationSubtask.get();
+//                List<IDName> industryTargets = industrySubtask.get().stream().map(p -> new IDName().setFieldName(p.right()).setFieldId(p.left()))
+//                        .toList();
+
 //                List<IDName> behaviourTargets = behaviourSubTask.get().stream().map(p -> new IDName().setFieldName(p.right()).setFieldId(p.left()))
 //                        .toList();
 
 
                 AdSet adSet = adAccount.createAdSet()
                         .setName(createAdSetRequest.adSetName())
-                        .setLifetimeBudget(1500L)
-                    .setBidAmount(300L)
-
+                        .setLifetimeBudget(2500L)
+                        .setBidAmount(2L)
                         .setStartTime(timeDuration.left())
-                    .setEndTime(timeDuration.right())
-                        .setBillingEvent(AdSet.EnumBillingEvent.VALUE_IMPRESSIONS)
-                        .setOptimizationGoal(AdSet.EnumOptimizationGoal.VALUE_POST_ENGAGEMENT)
+                        .setEndTime(timeDuration.right())
+                        .setBillingEvent(AdSet.EnumBillingEvent.VALUE_LINK_CLICKS)
+                        .setOptimizationGoal(AdSet.EnumOptimizationGoal.VALUE_LINK_CLICKS)
                         .setCampaignId(campaign.getId())
                         .setBidStrategy(AdSet.EnumBidStrategy.VALUE_LOWEST_COST_WITH_BID_CAP)
-                        .setDestinationType("ON_POST")
+                        .setDestinationType(AdSet.EnumDestinationType.VALUE_WEBSITE)
 //                        .setPromotedObject(
-//                                STR. """
-//                            {
-//                            "page_id":\{ createAdSetRequest.pageId() }
-//                            }
-//                            """
+//                                Map.of(
+//                                        "object_store_url", "https://amzn.to/3IoEl09"
+//                                )
 //
 //                        )
                         .setTargeting(
                                 new Targeting()
                                         .setFieldAgeMax(65L)
                                         .setFieldAgeMin(18L)
-                                        .setFieldDevicePlatforms(List.of(Targeting.EnumDevicePlatforms.VALUE_MOBILE
-                                                ,
-                                                Targeting.EnumDevicePlatforms.VALUE_DESKTOP
-                                                )
+                                        .setFieldDevicePlatforms(
+                                                List.of(Targeting.EnumDevicePlatforms.VALUE_MOBILE,
+                                                        
+                                                        Targeting.EnumDevicePlatforms.VALUE_DESKTOP
+                                                        )
                                         )
-//                                        .setFieldFacebookPositions(List.of("feed"))
-                                        .setFieldFlexibleSpec(List.of(
-                                                new FlexibleTargeting().setFieldInterests(fieldInterests)
-                                                        .setFieldIndustries(industryTargets)
+                                        .setFieldFacebookPositions(List.of("feed", "facebook_reels"))
+                                        //                                        .setFieldInstagramPositions(List.of("reels","story"))
+                                        .setFieldFlexibleSpec(
+                                                List.of(
+                                                        new FlexibleTargeting().setFieldInterests(fieldInterests)
+                                                                .setFieldBehaviors(
+                                                                        List.of(
+                                                                                new IDName()
+                                                                                        .setFieldId("6018797165983")
+                                                                                        .setFieldName("Lived in Ethiopia (Formerly Expats - Ethiopia)"))
+                                                                )
                                                 ))
-                                        .setFieldGenders(List.of(1L, 0L))
-                                        .setFieldGeoLocations(targetingGeoLocation)
-                                        .setFieldPublisherPlatforms(List.of("facebook","audience_network"))
+                        
+
+                                                     
+
+
+//                                                , new FlexibleTargeting()
+//
+//                                                        .setFieldCustomAudiences(
+//                                                                List.of(
+//                                                                        new IDName().setFieldId("120202442429000117"),
+//                                                                        new IDName().setFieldId("120202415069930117")
+//                                                                )
+//                                                        )
+                                        
+                                        .setFieldGenders(List.of(0L,1L))
+                                        .setFieldGeoLocations(
+                                                new TargetingGeoLocation()
+                                                        .setFieldCountries(countryCode)
+                                        )
+//                                        .setFieldRegions()
+//                                        .setFieldGeoLocations(targetingGeoLocation)
+//                                        .setFieldCustomAudiences(List.of(
+//                                                new RawCustomAudience().setFieldId("120202442429000117"),
+//                                                new RawCustomAudience().setFieldId("120202415069930117")
+//                                                ))
+//
+                                        .setFieldPublisherPlatforms(List.of("facebook", "instagram"))
                         )
                         .setStatus(AdSet.EnumStatus.VALUE_PAUSED)
                         .execute();
                 return adSet.getId();
-            } catch (InterruptedException e) {
-                throw new RuntimeException(e);
             }
 
         } catch (APIException e) {
+            e.printStackTrace();
             throw new RuntimeException(e);
         }
     }
 
     @NotNull
     private TargetingGeoLocation getTargetingGeoLocation(CreateAdSetRequest createAdSetRequest) {
-        Map<Pair<String, Integer>, List<Map<String, Object>>> geoLocations = getGeoLocations(new LocationTargetRequest(null, null, "city"));
+        Map<Pair<String, Integer>, List<Map<String, Object>>> geoLocations = Collections.emptyMap();
+
+//                getGeoLocations(new LocationTargetRequest(null, null, "city"));
 
         TargetingGeoLocation targetingGeoLocation = new TargetingGeoLocation();
 
@@ -591,7 +634,7 @@ public class MetaAdService {
 
         LocalDateTime startTime = LocalDateTime.now().plusMinutes(30);
 
-        LocalDateTime endTime = startTime.plusDays(10);
+        LocalDateTime endTime = startTime.plusDays(5);
 
         return new Pair<>(String.valueOf(startTime.atZone(ZoneId.systemDefault()).toEpochSecond()),
                 String.valueOf(endTime.atZone(ZoneId.systemDefault()).toEpochSecond())
@@ -623,44 +666,33 @@ public class MetaAdService {
                             createAdSetRequest.adSetName())));
 
 
-            TargetingGeoLocation targetingGeoLocation = getTargetingGeoLocation(createAdSetRequest);
-
-            List<IDName> fieldInterests = Collections.emptyList();
-//                    createAdSetRequest.interest().stream()
-//                    .flatMap(interest -> fetchInterest(interest).stream()
-//                            .map(m -> new IDName().setFieldId(m.get("id").toString())
-//                                    .setFieldName(m.get("name").toString())))
+//            TargetingGeoLocation targetingGeoLocation = getTargetingGeoLocation(createAdSetRequest);
+//            List<Map<String, Object>> fetchedInterest = fetchInterest(createAdSetRequest.interest());
+//
+//            List<IDName> fieldInterests = fetchedInterest.stream().flatMap(m -> m.entrySet().stream())
+//                    .map(m -> new IDName().setFieldId(m.getKey())
+//                            .setFieldName(m.getValue().toString()))
 //                    .collect(Collectors.toList());
 
+//
+            Targeting fieldTargeting = new AdSet(adset.getId(), apiContext).get().requestTargetingField(true)
+                    .requestIdField()
+                    .execute().getFieldTargeting();
 
-            new AdSet(adset.getId(), apiContext).update()
-                    .setTargeting(
-                            new Targeting()
-                                    .setFieldAgeMax(45L)
-                                    .setFieldAgeMin(20L)
-                                    .setFieldDevicePlatforms(List.of(Targeting.EnumDevicePlatforms.VALUE_MOBILE,
-                                            Targeting.EnumDevicePlatforms.VALUE_DESKTOP))
-                                    .setFieldFacebookPositions(List.of("feed", "story"))
-                                    .setFieldFlexibleSpec(List.of(new FlexibleTargeting()
-                                            .setFieldInterests(fieldInterests)
-                                            .setFieldIndustries(List.of(
-                                                    new IDName().setFieldId("6009003307783").setFieldName("Business and Finance"),
-                                                    new IDName().setFieldId("6009003311983").setFieldName("Management"),
-                                                    new IDName().setFieldId("6008888980183").setFieldName("Sales"),
-                                                    new IDName().setFieldId("6008888972183").setFieldName("Legal Services"),
-                                                    new IDName().setFieldId("6012901802383").setFieldName("Arts, Entertainment, Sports and Media"),
-                                                    new IDName().setFieldId("6012903140583").setFieldName("Production"),
-                                                    new IDName().setFieldId("6012903127583").setFieldName("Food and Restaurants"),
-                                                    new IDName().setFieldId("6012903160983").setFieldName("Installation and Repair Services"),
-                                                    new IDName().setFieldId("6012903317583").setFieldName("Cleaning and Maintenance Services"),
-                                                    new IDName().setFieldId("6262428209783").setFieldName("Business decision maker titles and interests")
-                                            ))
-                                    ))
-                                    .setFieldGenders(List.of(1L, 0l))
-                                    .setFieldGeoLocations(targetingGeoLocation)
-                                    .setFieldPublisherPlatforms(List.of("facebook", "audience_network", "instagram"))
-                    )
-                    .execute();
+            List<RawCustomAudience> fieldCustomAudiences = fieldTargeting.getFieldCustomAudiences();
+
+
+            fieldCustomAudiences.addLast(new RawCustomAudience()
+                    .setFieldName("Collection Engagement Audience click")
+                    .setFieldId("120202721976300117"));
+
+
+
+
+            fieldTargeting.setFieldCustomAudiences(fieldCustomAudiences);
+
+            new AdSet(adset.getId(),apiContext).update().setTargeting(fieldTargeting).execute();
+
 
         } catch (Exception e) {
             throw new RuntimeException(e);
@@ -671,12 +703,12 @@ public class MetaAdService {
         try {
 
 
-            Ad execute = new Ad("120201281162870117", apiContext).update()
-                    .setCreative(new AdCreative(creativeId,apiContext).get().requestAllFields().execute())
+            Ad execute = new Ad("120202394861370117", apiContext).update()
+                    .setCreative(new AdCreative(creativeId, apiContext).get().requestAllFields().execute())
 
 
                     .execute();
-          return   "successs";
+            return "successs";
 //            AdAccount adAccount = new AdAccount(accountId, apiContext);
 //
 //            Campaign campaign = adAccount.getCampaigns().requestAllFields().execute().stream()
@@ -734,14 +766,35 @@ public class MetaAdService {
 
                     .setName(createAdRequest.adName())
                     .setAdsetId(adSetId)
-                    .setCreative(new AdCreative(createAdRequest.adCreativeId(),apiContext).get().requestAllFields().execute())
+                    .setCreative(new AdCreative(createAdRequest.adCreativeId(), 
+                            apiContext))
                     .setStatus(Ad.EnumStatus.VALUE_PAUSED)
                     .execute();
 
             return ad.getId();
 
         } catch (Exception e) {
+            e.printStackTrace();
             throw new RuntimeException(e);
+        }
+    }
+
+
+    public String generatePreview(){
+
+        try{
+            APINodeList<AdPreview> adPreviews = new AdAccount(accountId, apiContext).getGeneratePreviews()
+                    .setCreative(
+                            new AdCreative().setFieldId("")
+                    ).setAdFormat(AdPreview.EnumAdFormat.VALUE_INSTAGRAM_REELS)
+                    .requestAllFields(true)
+                    .execute();
+
+            return adPreviews.getRawResponse();
+
+        }catch (Exception e){
+            e.printStackTrace();
+            throw new RuntimeException(e.getMessage());
         }
     }
 
@@ -756,39 +809,94 @@ public class MetaAdService {
     public List<ProductDetails> createBatchProductItems() {
 
 
-        try (var executor =new StructuredTaskScope.ShutdownOnFailure()) {
+        try (var executor = new StructuredTaskScope.ShutdownOnFailure()) {
             ProductCatalog productCatalog = new ProductCatalog(productCatalogId, apiContext);
 
-//
             List<StructuredTaskScope.Subtask<ProductDetails>> subtasks = Stream.of(
 
-                    new ProductDetails("ቦታው: ሀይሌ ጋርመንት", "2600000000",
+                            new ProductDetails("Anua Heartleaf 77% Soothing Toner",
+                                    "1969",
 
-                            "/home/michael/Documents/experts_house/yabu/selected/1S.jpg",
+                                    "/home/michael/Documents/affiliate/amazon/1s.png",
 
-                            STR."""
-                                     desc
-                                    """, "https://www.facebook.com/122107049000136215/posts/122111779844136215"
+                                    STR."""
+                                            Under Eye Patches (20 Pairs) - Golden Under Eye Mask Amino Acid & Collagen,
+                                            Under Eye Mask for Face, Dark Circles and Puffiness, Beauty & Personal Care
+                                            """,
+                                    "https://amzn.to/3Sek0Ae"
+                            ),
+
+                            new ProductDetails("CeraVe Eye Repair Cream",
+                                    "1379",
+
+                                    "/home/michael/Documents/affiliate/amazon/2s.png",
+
+                                    STR."""
+                                            Under Eye Cream for Dark Circles and Puffiness
+                                            |Suitable for Delicate Skin Under Eye Area | 0.5 Ounce
+                                            """, "https://amzn.to/47zLXHj"
+                            ),
+
+                            new ProductDetails("TruSkin Naturals Vitamin C Face Serum",
+                                    "1977",
+
+                                    "/home/michael/Documents/affiliate/amazon/3s.png",
+
+                                    STR."""
+                                            Anti Aging Face & Eye Serum with Vitamin C,
+                                            Hyaluronic Acid, Vitamin E Brightening Serum, Dark Spot Remover, Even Skin Tone 1 Fl Oz
+                                            """,
+                                    "https://amzn.to/3vJ5uYk"
+                            ),
+
+                            new ProductDetails("CeraVe AM Facial Moisturizing Lotion",
+                                    "1449",
+
+                                    "/home/michael/Documents/affiliate/amazon/4s.png",
+
+                                    STR."""
+                                             SPF 30 | Oil-Free Face Moisturizer with Sunscreen | Non-Comedogenic | 3 Ounce
+                                            """,
+                                    "https://amzn.to/3vzTicv"
+                            ),
+
+                            new ProductDetails("Kitsch Dermaplaning Tool - Face Razors for Women",
+                                    "764",
+
+                                    "/home/michael/Documents/affiliate/amazon/5s.png",
+
+                                    STR."""
+                                            Eyebrow Razor & Face Shaver for Women | Facial Hair Removal for Women
+                                            """,
+                                    "https://amzn.to/47yr0MS"
+                            ),
+
+                            new ProductDetails("Under Eye Patches (20 Pairs)",
+                                    "1479",
+
+                                    "/home/michael/Documents/affiliate/amazon/6s.png",
+
+                                    STR."""
+                                            Golden Under Eye Mask Amino Acid & Collagen,
+                                             Under Eye Mask for Face, Dark Circles and Puffiness, Beauty & Personal Care
+                                            """,
+                                    "https://amzn.to/3Sh9CYF"
+                            )
+
                     )
 
-            )
-
                     .map(p -> executor.fork(() ->
+                            new ProductDetails(p.name(),
+                                    p.price(),
+                                    createAdMedia(new AdMediaUpload(p.mainImage(), AdTypeEnum.IMAGE)),
+                                    p.description(), p.url())
 
-                    new ProductDetails(p.name(),
-                            p.price(),
-                            createAdMedia(new AdMediaUpload(p.mainImage(), AdTypeEnum.IMAGE)),
-                            p.description(),p.url())
-
-            )).toList();
-
+                    )).toList();
             executor.join().throwIfFailed();
-
 
             List<ProductDetails> productDetailsList = subtasks.stream()
                     .map(StructuredTaskScope.Subtask::get)
                     .toList();
-
 
             List<StructuredTaskScope.Subtask<ProductDetails>> subtaskList = productDetailsList.stream()
                     .map(p -> executor.fork(() -> {
@@ -799,13 +907,14 @@ public class MetaAdService {
 //                                            .setAdditionalImageUrls(p.additonalImages().subList(1, p.additonalImages().size()))
                                             .setAvailability(ProductItem.EnumAvailability.VALUE_IN_STOCK)
                                             .setDescription(p.description())
-                                            .setRetailerId(STR."experts\{Math.random()}")
-                                            .setBrand("CUSTOM")
-                                            .setCurrency("ETB")
+                                            .setRetailerId(STR."ARCHANGLE\{Math.random()}")
+                                            .setBrand("amazon_items")
+                                            .setCurrency("USD")
+                                            .setColor(p.description())
 //                                            .setCategory("c")
                                             .setUrl(p.url())
                                             .setPrice(p.price()).execute().getId();
-                                    return new ProductDetails(p.name(), p.price(), p.mainImage(), p.description(),p.url());
+                                    return new ProductDetails(p.name(), p.price(), p.mainImage(), p.description(), p.url());
                                 } catch (Exception e) {
                                     throw new RuntimeException(e.getMessage());
                                 }
@@ -825,50 +934,51 @@ public class MetaAdService {
         }
     }
 
-    public List<String> updateProductItems(){
+    public List<String> updateProductItems() {
 //        return getCategories();
-        return updateSetProductType();
-//        try(var executor = new StructuredTaskScope.ShutdownOnFailure()){
-//
-////            ProductCatalog productCatalog = new ProductCatalog(productCatalogId, apiContext);
-//
-//            List<ProductItem> productItems = new ProductSet("314373991467477", apiContext).getProducts().execute().stream().toList();
-//
-//            Map<String, String> idImageMap = Map.of("6453008064803029", "/home/michael/Documents/experts_house/global/g3.jpg",
-//
-//
-//                    "6684367151690788", "/home/michael/Documents/experts_house/meskel_flower/mf2.jpg",
-//
-//                    "7818666151495802", "/home/michael/Documents/experts_house/round_meskel_flower/selected/rmf1.jpg");
-//
-//            List<StructuredTaskScope.Subtask<ProductItem>> subtasks = productItems.stream()
-//                    .map(ProductItem::getId)
-//                    .filter(idImageMap::containsKey)
-//                    .map(i -> executor.fork(() -> new ProductItem(i, apiContext)
-//                            .update()
-//                            .setImageUrl(createAdMedia(new AdMediaUpload(idImageMap.get(i),AdTypeEnum.IMAGE)))
-//                            .execute()))
-//                    .toList();
-//
-//            executor.join();
-//
-//           return subtasks.stream().map(StructuredTaskScope.Subtask::get)
-//                   .map(p -> {
-//                       try {
-//                          return p.get().requestImageUrlField().execute().getFieldImageUrl();
-//                       } catch (APIException e) {
-//                           throw new RuntimeException(e);
-//                       }
-//                   })
-//                    .collect(Collectors.toList());
-//        }
-//        catch (Exception e){
-//            throw new RuntimeException(e.getMessage());
-//        }
+//        return updateSetProductType();
+        try(var executor = new StructuredTaskScope.ShutdownOnFailure()){
+
+//            ProductCatalog productCatalog = new ProductCatalog(productCatalogId, apiContext);
+
+            List<ProductItem> productItems = new ProductSet("752229306296318", apiContext).getProducts()
+                    .requestImageUrlField(true)
+                    .requestIdField(true)
+
+                    .execute().stream().toList();
+
+            Map<String, String> idImageMap = Map.of(
+                    "6971937166253689", "/home/michael/Documents/affiliate/amazon/1m.png",
+                    "7724823697547487", "/home/michael/Documents/affiliate/amazon/2m.png",
+                    "7083110528470292", "/home/michael/Documents/affiliate/amazon/3m.png",
+                    "7880015052015459", "/home/michael/Documents/affiliate/amazon/4m.png",
+                    "6964510783664559", "/home/michael/Documents/affiliate/amazon/5m.png",
+                    "24433362406310139", "/home/michael/Documents/affiliate/amazon/6m.png"
+
+
+
+            );
+
+            List<StructuredTaskScope.Subtask<ProductItem>> subtasks = productItems.stream()
+                    .map(ProductItem::getId)
+                    .filter(idImageMap::containsKey)
+                    .map(i -> executor.fork(() -> new ProductItem(i, apiContext)
+                            .update()
+                            .setImageUrl(createAdMedia(new AdMediaUpload(idImageMap.get(i),AdTypeEnum.IMAGE)))
+                            .execute()))
+                    .toList();
+
+            executor.join();
+
+           return List.of("");
+        }
+        catch (Exception e){
+            throw new RuntimeException(e.getMessage());
+        }
     }
 
-    public List<String> updateSetProductType(){
-        try(var executor = new StructuredTaskScope.ShutdownOnFailure()){
+    public List<String> updateSetProductType() {
+        try (var executor = new StructuredTaskScope.ShutdownOnFailure()) {
 
 
             Map<Integer, String> catMap = Map.of(0, "houses",
@@ -879,6 +989,7 @@ public class MetaAdService {
             );
 
 //            ProductCatalog productCatalog = new ProductCatalog(productCatalogId, apiContext);
+
 
             List<ProductItem> productItems = new ProductSet("1058170845332950", apiContext).getProducts().execute().stream().toList();
 
@@ -891,7 +1002,7 @@ public class MetaAdService {
 
 //            Map<String, String> typeMap = Map.of("G+1", "Building", "ሚሸጥ ባለ ሁለት መኝታ አፓርታማ", "Apartments");
 
-            List<StructuredTaskScope.Subtask<ProductItem>> subtasks = IntStream.range(0,productItems.size())
+            List<StructuredTaskScope.Subtask<ProductItem>> subtasks = IntStream.range(0, productItems.size())
 
 //                    .filter( p -> typeMap.containsKey(p.getFieldName()))
                     .mapToObj(i -> executor.fork(() -> new ProductItem(productItems.get(i).getId(), apiContext)
@@ -906,16 +1017,17 @@ public class MetaAdService {
             return subtasks.stream().map(StructuredTaskScope.Subtask::get)
                     .map(ProductItem::toString)
                     .collect(Collectors.toList());
-        }
-        catch (Exception e){
+        } catch (Exception e) {
             throw new RuntimeException(e.getMessage());
         }
     }
 
-    public List<String> getCategories(){
+    public List<String> getCategories() {
 
         try {
             ProductCatalog productCatalog = new ProductCatalog(productCatalogId, apiContext);
+
+
 //
 //            .getCategories()
 //                    .execute().stream()
@@ -979,62 +1091,58 @@ public class MetaAdService {
     public List<String> createProductSet(String name) {
 
 
+        try (var executor = new StructuredTaskScope.ShutdownOnFailure()) {
+            List<StructuredTaskScope.Subtask<ProductItem>> subtasks = new ProductSet("305146685239862", apiContext).getProducts().execute().stream()
+                    .map(p -> executor.fork(() -> p.get().requestOrderingIndexField(true)
+                            .requestNameField(true)
+                            .requestPriceField(true)
+                            .requestPriceField(true)
+                            .execute())
 
 
+                    ).toList();
 
-            try(var executor  = new StructuredTaskScope.ShutdownOnFailure()){
-                List<StructuredTaskScope.Subtask<ProductItem>> subtasks = new ProductSet("305146685239862", apiContext).getProducts().execute().stream()
-                        .map(p -> executor.fork(() -> p.get().requestOrderingIndexField(true)
-                                .requestNameField(true)
-                                .requestPriceField(true)
-                                .requestPriceField(true)
-                                .execute())
-
-
-                        ).toList();
-
-                executor.join();
+            executor.join();
 
 
 //
-                Map<Boolean, List<ProductItem>> cars = subtasks.stream()
-                        .map(StructuredTaskScope.Subtask::get)
-                        .filter(p -> p.getFieldProductType() != null)
-                        .collect(Collectors.partitioningBy(p -> p.getFieldProductType().equals("CARS")));
+            Map<Boolean, List<ProductItem>> cars = subtasks.stream()
+                    .map(StructuredTaskScope.Subtask::get)
+                    .filter(p -> p.getFieldProductType() != null)
+                    .collect(Collectors.partitioningBy(p -> p.getFieldProductType().equals("CARS")));
 
 
-                List<ProductItem> productItems = cars.get(false);
-                productItems.addAll(cars.get(true));
+            List<ProductItem> productItems = cars.get(false);
+            productItems.addAll(cars.get(true));
 
-        IntStream.range(0, productItems.size())
-                        .forEach(i -> {
-                            try {
-                                 productItems.get(i).update()
-                                                .setOrderingIndex((long) i)
-                                .execute();
-                            } catch (APIException e) {
-                                throw new RuntimeException(e);
-                            }
-                        });
+            IntStream.range(0, productItems.size())
+                    .forEach(i -> {
+                        try {
+                            productItems.get(i).update()
+                                    .setOrderingIndex((long) i)
+                                    .execute();
+                        } catch (APIException e) {
+                            throw new RuntimeException(e);
+                        }
+                    });
 
-                List<StructuredTaskScope.Subtask<ProductItem>> subtaskList = new ProductSet("314373991467477", apiContext).getProducts().execute().stream()
-                        .map(p -> executor.fork(() -> p.get()
-                                .requestOrderingIndexField(true)
-                                .requestNameField(true)
-                                .execute())
+            List<StructuredTaskScope.Subtask<ProductItem>> subtaskList = new ProductSet("314373991467477", apiContext).getProducts().execute().stream()
+                    .map(p -> executor.fork(() -> p.get()
+                            .requestOrderingIndexField(true)
+                            .requestNameField(true)
+                            .execute())
 
 
-                        ).toList();
+                    ).toList();
 
-                executor.join();
+            executor.join();
 
-              return   subtaskList.stream()
-                        .map(StructuredTaskScope.Subtask::get)
-                        .map( p -> STR."""
+            return subtaskList.stream()
+                    .map(StructuredTaskScope.Subtask::get)
+                    .map(p -> STR."""
                                 \{p.getFieldName()}
                                 \{p.getFieldOrderingIndex()}
                                 """).toList();
-
 
 
 //

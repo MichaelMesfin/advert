@@ -7,22 +7,22 @@ import java.util.function.BiFunction;
 
 public enum GeoLocationType {
 
-    COUNTRY((l, a) -> Map.of("location_types", "[\"country\"]",
+    COUNTRY((q, a) -> Map.of("location_types", "[\"country\",\"city\"]",
             "type", "adgeolocation",
             "limit","1000",
-            "country_code","ET",
+            "q",q,
             "access_token", a)),
-    REGION((l, a) -> Map.of("location_types", "[\"region\",\"city\"]",
+    REGION((l, a) -> Map.of("location_types", "[\"region\"]",
             "type", "adgeolocation",
-//            "limit","1000",
-            "country_code","ET",
-            "q",l,
+            "limit","1000",
+            "country_code","US",
+//            "q",l,
             "access_token", a)),
 
     CITY((l, a) -> Map.of("location_types", "[\"city\"]",
             "type", "adgeolocation",
             "limit", "1000",
-            "country_code", "ET",
+            "country_code", "US",
 //            "region_id",1034,
             "q", "ET",
             "access_token", a));
