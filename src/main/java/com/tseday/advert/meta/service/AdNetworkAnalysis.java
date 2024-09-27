@@ -25,13 +25,11 @@ public class AdNetworkAnalysis {
     @Value("${meta.productCatalog}")
     String productCatalogId;
 
-    private final StringTemplate.Processor<JsonObject, RuntimeException> JSON;
 
     @Autowired
-    public AdNetworkAnalysis(@Qualifier("metaApiContext") APIContext apiContext, ObjectMapper objectMapper,
-                             @Qualifier("jsonProcessor") StringTemplate.Processor<JsonObject, RuntimeException> json) {
+    public AdNetworkAnalysis(@Qualifier("metaApiContext") APIContext apiContext, ObjectMapper objectMapper
+                            ) {
         this.apiContext = apiContext;
-        JSON = json;
         APIRequest<AdAccount> adAccountAPIRequest = new APIRequest<>(apiContext, "me", "/adaccounts", "GET", AdAccount.getParser());
 
         this.objectMapper = objectMapper;
@@ -67,7 +65,7 @@ public class AdNetworkAnalysis {
     public String createAudience(){
         try{
 
-            String ruleClick =  JSON."""
+            String canvasClick = """
                     {
                       "inclusions": {
                         "operator": "or",
@@ -75,7 +73,7 @@ public class AdNetworkAnalysis {
                           {
                             "event_sources": [
                               {
-                                "id": "1145756813462829",
+                                "id": "1537176333565601",
                                 "type": "canvas"
                               }
                             ],
@@ -94,37 +92,36 @@ public class AdNetworkAnalysis {
                         ]
                       }
                     }
-                    """.toString();
+                    """;
 
 
-            String instaCtaClick =  JSON."""
-                    {
-                        "inclusions": {
-                          "operator": "or",
-                          "rules": [
-                            {
-                              "event_sources": [
-                                {
-                                  "id": "1145756813462829",
-                                  "type": "ig_business"
-                                }
-                              ],
-                              "retention_seconds": 31536000,
-                              "filter": {
-                                "operator": "and",
-                                "filters": [
-                                  {
-                                    "field": "event",
-                                    "operator": "eq",
-                                    "value": "ig_ad_cta_click"
-                                  }
-                                ]
-                              }
-                            }
-                          ]
-                        }
-                      }
-                    """.toString();
+            String instaCtaClick =  """
+                                    {
+                                                            "inclusions": {
+                                                              "operator": "or",
+                                                              "rules": [
+                                                                {
+                                                                  "event_sources": [
+                                                                    {
+                                                                      "id": "1145756813462829",
+                                                                      "type": "ig_business"
+                                                                    }
+                                                                  ],
+                                                                  "retention_seconds": 31536000,
+                                                                  "filter": {
+                                                                    "operator": "and",
+                                                                    "filters": [
+                                                                      {
+                                                                        "field": "event",
+                                                                        "operator": "eq",
+                                                                        "value": "ig_ad_cta_click"
+                                                                      }
+                                                                    ]
+                                                                  }
+                                                                }
+                                                              ]
+                                                            }
+                                                          }""";
 
 
 
@@ -140,9 +137,9 @@ public class AdNetworkAnalysis {
 
 
             CustomAudience openAudience = new AdAccount(accountId, apiContext).createCustomAudience()
-                    .setName("Collection Engagement insta cta click")
+                    .setName("Collection Engagement zii")
                     .setDescription("People who opened cta")
-                    .setRule(instaCtaClick)
+                    .setRule(canvasClick)
                     .execute();
 
             return openAudience.getFieldId();
@@ -187,9 +184,9 @@ public class AdNetworkAnalysis {
                     .setName("audibleLookAlike")
                     .setSubtype(CustomAudience.EnumSubtype.VALUE_LOOKALIKE)
                     .setOriginAudienceId("120204436206180117")
-                    .setLookalikeSpec(JSON."""
+                    .setLookalikeSpec("""
                             {"type":"similarity","country":"US"}
-                            """.toString())
+                            """)
                     .execute();
             return affiliateLookAlike.getId();
 

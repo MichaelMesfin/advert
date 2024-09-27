@@ -1,29 +1,19 @@
 package com.tseday.advert.meta.service;
 
-import com.facebook.ads.sdk.Canvas;
 import com.facebook.ads.sdk.*;
-import com.fasterxml.jackson.core.JsonProcessingException;
+import com.facebook.ads.sdk.Canvas;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.gson.Gson;
 import com.google.gson.JsonElement;
 import com.tseday.advert.meta.dto.AdMediaUpload;
+import com.tseday.advert.meta.dto.CanvasCollectionCreativeData;
 import com.tseday.advert.meta.dto.CreateAdRequest;
-import com.tseday.advert.util.ImageProcessor;
+import com.tseday.advert.meta.dto.PostContent;
 import jakarta.json.Json;
 import jakarta.json.JsonArray;
 import jakarta.json.JsonObject;
 import jakarta.json.JsonReader;
-import org.jetbrains.annotations.NotNull;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Service;
-
-import javax.imageio.ImageIO;
-import java.awt.*;
-import java.awt.image.BufferedImage;
-import java.io.FileOutputStream;
+import java.io.File;
 import java.io.IOException;
 import java.io.StringReader;
 import java.nio.file.Files;
@@ -34,9 +24,12 @@ import java.util.Map;
 import java.util.concurrent.StructuredTaskScope;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-
-import static com.tseday.advert.util.ImageProcessor.writeJPG;
-import java.io.File;
+import org.jetbrains.annotations.NotNull;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
 
 @Service
 public class AdCreativeService {
@@ -53,39 +46,38 @@ public class AdCreativeService {
 
     private final ObjectMapper objectMapper;
 
-    private final StringTemplate.Processor<JsonObject, RuntimeException> JSON;
-
     private static final Logger LOG = LoggerFactory.getLogger(AdCreativeService.class);
+
+    private final String canvasLink;
 
     public AdCreativeService(@Qualifier("metaApiContext") APIContext apiContext,
             MetaAdService metaAdService,
-            ObjectMapper objectMapper,
-            @Qualifier("jsonProcessor") StringTemplate.Processor<JsonObject, RuntimeException> json) {
+            ObjectMapper objectMapper) {
+        this.canvasLink = "https://fb.com/canvas_doc/";
         this.apiContext = apiContext;
         this.metaAdService = metaAdService;
         this.objectMapper = objectMapper;
-        JSON = json;
     }
 
     public String createAdFromPost(String pagePostId) {
 
         try {
             AdCreative adCreative = new AdAccount(accountId, apiContext).createAdCreative()
-                    .setObjectId("101086373072062")
-                    .setInstagramUserId("17841461005640471")
-                    .setSourceInstagramMediaId("18041993617679931")
-                    .setCallToAction(Map.of("type", "SIGN_UP",
-                            "value", Map.of("link", "https://amzn.to/3IoEl09")
-                    ))
+                    .setObjectStoryId(pagePostId)
+                    .setCallToAction(
+                            AdCreative.EnumCallToActionType.VALUE_MESSAGE_PAGE
+                    )
                     .execute();
 
             String id = adCreative.getId();
 
             return metaAdService.createAd(
-                    new CreateAdRequest("audible-plus", "audiblePlus-set", id, "audiblePlusAd")
+                    new CreateAdRequest("testCampaign2",
+                            "testAdset2", id, "testAd")
             );
 
         } catch (Exception e) {
+            e.printStackTrace();
             throw new RuntimeException(e.getMessage());
         }
     }
@@ -159,22 +151,19 @@ public class AdCreativeService {
                                     List.of(canvasVideoId, canvasProductListElement, footerId)
                             ).setName("videoCanvas").setIsPublished(true).execute().getRawResponseAsJsonObject().get("id").getAsString();
 
-            String elementImageCrops = STR.
-            """
-                    {
-                        "100x100": [
-                            [
-                                0,
-                                0
-                            ],
-                            [
-                                100,
-                                100
-                            ]
-                        ]
-                    }
-                    """;
-
+            String elementImageCrops = """
+                                       {
+                                                               "100x100": [
+                                                                   [
+                                                                       0,
+                                                                       0
+                                                                   ],
+                                                                   [
+                                                                       100,
+                                                                       100
+                                                                   ]
+                                                               ]
+                                                           }""";
 
             AdCreative adCreative = new AdAccount(accountId, apiContext).createAdCreative()
                     .setName("videoCreative")
@@ -190,10 +179,12 @@ public class AdCreativeService {
                                                     //                                                                            new AdCreativeLinkDataCallToActionValue()
                                                     //                                                                                    .setFieldLink(STR."https://fb.com/canvas_doc/\{canvasId}")
                                                     //                                                                    )
-                                                    ).setFieldLink(STR."https://fb.com/canvas_doc/\{canvasId}")
-                                                    .setFieldMessage(STR."""
-                                                            Browse the product details below
-                                                            """)
+                                                    ).setFieldLink(
+                                                            "https://fb.com/canvas_doc/" + canvasId
+                                                    )
+                                                    .setFieldMessage(
+                                                            "  Browse the product details below"
+                                                    )
                                                     .setFieldName("A Complete Natural Pharmacy in Your Backyard")
                                                     .setFieldCollectionThumbnails(
                                                             List.of(
@@ -204,11 +195,10 @@ public class AdCreativeService {
                                                                             //                                                                            .setFieldElementChildIndex(0L)
                                                                             .setFieldElementId(canvasProductListElement)
                                                                             .setFieldElementChildIndex(0L),
-
-                                                                     new AdCreativeCollectionThumbnailInfo()
+                                                                    new AdCreativeCollectionThumbnailInfo()
                                                                             .setFieldElementChildIndex(1L)
                                                                             .setFieldElementId(canvasProductListElement),
-                                                                     new AdCreativeCollectionThumbnailInfo()
+                                                                    new AdCreativeCollectionThumbnailInfo()
                                                                             .setFieldElementChildIndex(2L)
                                                                             .setFieldElementId(canvasProductListElement),
                                                                     new AdCreativeCollectionThumbnailInfo()
@@ -280,24 +270,26 @@ public class AdCreativeService {
 //                )
 //                    )
 //            ).execute().getRawResponseAsJsonObject().get("id").getAsString();
-    public String createVideoCollectionAds() {
+    public String createVideoCollectionAds(CanvasCollectionCreativeData creativeData) {
         try {
 
 //
-            Page page = new Page("101086373072062", apiContext);
+            Page page = new Page(creativeData.pageId(), apiContext);
 
-            String url = metaAdService.createAdMedia(new AdMediaUpload("/home/michael/Documents/affiliate/amazon/bannerb.png", AdTypeEnum.IMAGE));
-
-            String photoId = page.createPhoto().setUrl(url).setPublished(false)
-                    .execute().getId();
-
-            String canvasPhoto = page.createCanvasElement().setCanvasPhoto(Map.of("photo_id", photoId))
+//            String url = metaAdService.createAdMedia(new AdMediaUpload("/home/michael/Documents/affiliate/amazon/bannerb.png", AdTypeEnum.IMAGE));
+//
+//            String photoId = page.createPhoto().setUrl(url).setPublished(false)
+//                    .execute().getId();
+//            String canvasPhoto = page.createCanvasElement().setCanvasPhoto(Map.of("photo_id", photoId))
+//                    .execute().getRawResponseAsJsonObject().get("id").getAsString();
+            String videoId = page.createCanvasElement()
+                    .setCanvasVideo(Map.of("video_id", creativeData.videoId()))
                     .execute().getRawResponseAsJsonObject().get("id").getAsString();
 
             String buttonId = page.createCanvasElement().setCanvasButton(
-                    Map.of("rich_text", Map.of("plain_text", "Shop Now"),
+                    Map.of("rich_text", Map.of("plain_text", "CONTACT US"),
                             "open_url_action", Map.of(
-                                    "url", "https://amzn.to/3Sek0Ae"
+                                    "url", "https://t.me/Ziiipapi"
                             )
                     )
             ).execute().getRawResponseAsJsonObject().get("id").getAsString();
@@ -309,51 +301,75 @@ public class AdCreativeService {
                     )
             ).execute().getRawResponseAsJsonObject().get("id").getAsString();
 
-            String canvasProductSet = createCollectionProductSet();
+            String canvasProductSet = createCollectionProductSet(
+                    creativeData.productSetId(),
+                    creativeData.pageId()
+            );
 
             String canvasId
                     = page.createCanvase()
                             .setBodyElementIds(
                                     List.of(
-                                            canvasPhoto,
+                                            videoId,
                                             canvasProductSet,
                                             footerId
                                     )
-                            ).setName("salesCanvas1").setIsPublished(true).execute().getRawResponseAsJsonObject().get("id").getAsString();
+                            ).setName("ziiCanvas")
+                            .setIsPublished(true)
+                            .execute().getRawResponseAsJsonObject().get("id").getAsString();
 
-            AdCreative adCreative = new AdAccount(accountId, apiContext).createAdCreative()
-                    .setName("instant experience sales")
+            String id = new AdAccount(accountId, apiContext).createAdCreative()
+                    .setName("zii_ie2")
                     .setObjectStorySpec(
                             new AdCreativeObjectStorySpec()
-                                    .setFieldLinkData(
-                                            new AdCreativeLinkData()
-                                                    .setFieldLink(STR."https://fb.com/canvas_doc/\{canvasId}")
-                                                    .setFieldMessage(STR."""
-                                                            New Year New You, SHOP BEST SELLING PERSONAL CARES UNDER $20
-                                                            """.trim())
-                                                    .setFieldName("Browse available products below")
-                                    ).setFieldPageId("101086373072062")
+                                    .setFieldVideoData(
+                                            new AdCreativeVideoData()
+                                                    .setFieldCallToAction(
+                                                            new AdCreativeLinkDataCallToAction()
+                                                                    .setFieldType(AdCreativeLinkDataCallToAction.EnumType.VALUE_LEARN_MORE)
+                                                                    .setFieldValue(
+                                                                            new AdCreativeLinkDataCallToActionValue()
+                                                                                    .setFieldLink(
+                                                                                            canvasLink.concat(canvasId)
+                                                                                    )
+                                                                    )
+                                                    )
+                                                    .setFieldMessage(creativeData.message())
+                                                    .setFieldTitle(creativeData.title())
+                                    )
+                                    .setFieldPageId(creativeData.pageId())
+                    //                                    .setFieldLinkData(
+                    //                                            new AdCreativeLinkData()
+                    //                                                    .setFieldLink(STR."https://fb.com/canvas_doc/\{canvasId}")
+                    //                                                    .setFieldMessage(STR."""
+                    //                                                            New Year New You, SHOP BEST SELLING PERSONAL CARES UNDER $20
+                    //                                                            """.trim())
+                    //                                                    .setFieldName("Browse available products below")
+                    //                                    ).setFieldPageId("101086373072062")
                     )
-                    .setObjectType("SHARE")
-                    .setDegreesOfFreedomSpec(
-                            new Gson().toJson(
-                                    Map.of("creative_features_spec", Map.of(
-                                            "standard_enhancements", Map.of(
-                                                    "enroll_status", "OPT_OUT"
-                                            )
-                                    ))
-                            ))
-                    .execute();
+                    .setObjectType("VIDEO")
+                    //                    .setDegreesOfFreedomSpec(
+                    //                            new Gson().toJson(
+                    //                                    Map.of("creative_features_spec", Map.of(
+                    //                                            "standard_enhancements", Map.of(
+                    //                                                    "enroll_status", "OPT_OUT"
+                    //                                            )
+                    //                                    ))
+                    //                            ))
+                    .execute().getId();
+
+            return id;
 //
-            return metaAdService.createAd(
-                    new CreateAdRequest("productSales",
-                            "salesCostCap",
-                            adCreative.getId(),
-                            "productSales"));
+
+//            return metaAdService.createAd(
+//                    new CreateAdRequest("productSales",
+//                            "salesCostCap",
+//                            adCreative.getId(),
+//                            "productSales"));
 //            return metaAdService.updateAd(adCreative.getId());
 //            );
-
         } catch (Exception e) {
+            e.printStackTrace();
             throw new RuntimeException(e.getMessage());
         }
     }
@@ -366,7 +382,7 @@ public class AdCreativeService {
             AdCreative test = adAccount.createAdCreative()
                     .setObjectStorySpec(new AdCreativeObjectStorySpec().setFieldVideoData(
                             new AdCreativeVideoData()
-                                    .setFieldVideoId("866228782216436")
+                                    .setFieldVideoId("3235763586555092")
                                     .setFieldImageHash("3517f7029eda388a7b667a49f009f928")
                                     .setFieldTitle("ባቋራጭ")
                                     .setFieldCallToAction(new AdCreativeLinkDataCallToAction()
@@ -375,7 +391,7 @@ public class AdCreativeService {
                                                     new AdCreativeLinkDataCallToActionValue()
                                                             .setFieldLink("https://www.youtube.com/watch?v=bjPPAa3-GDs")
                                             ))
-                    ).setFieldPageId("383979581458542")
+                    ).setFieldPageId("1573747589539364")
                     )
                     .setDegreesOfFreedomSpec(
                             new Gson().toJson(
@@ -395,19 +411,20 @@ public class AdCreativeService {
         }
     }
 
-    public String createCollectionProductSet() {
+    public String createCollectionProductSet(String prodcutSetId, String pageId) {
         try {
 
-            Page page = new Page("101086373072062", apiContext);
+            Page page = new Page(pageId, apiContext);
 
             CanvasBodyElement canvasBodyElement = page.createCanvasElement().setCanvasProductSet(
                     Map.of(
-                            "product_set_id", "752229306296318",
+                            "product_set_id", prodcutSetId,
                             "item_headline", "{{product.name}}",
-                            "item_description", "{{product.current_price}}",
+                            "item_description", "{{product.description}}",
                             "image_overlay_spec", Map.of(
-                                    "overlay_template", "pill_with_text",
-                                    "text_type", "price",
+                                    "overlay_template", "triangle_with_text",
+                                    "text_type", "custom",
+                                    "custom_text_type", "free_shipping",
                                     "text_font", "lato_regular",
                                     "position", "top_left",
                                     "theme_color", "background_e50900_text_ffffff",
@@ -424,10 +441,10 @@ public class AdCreativeService {
                                                     "customized_title", "Favorites"
                                             )
                                     ),
-                                    "product_set_layout", Map.of("layout_type", "GRID_2COL")
+                                    "product_set_layout", Map.of("layout_type", "GRID_3COL")
                             ),
                             "show_in_feed", true,
-                            "retailer_item_ids", List.of(0, 0)
+                            "retailer_item_ids", List.of(0, 0, 0)
                     )
             )
                     .execute();
@@ -499,13 +516,13 @@ public class AdCreativeService {
         }
     }
 
-    public List<String> createMultiPhotoPost() {
+    public List<String> createMultiPhotoPost(PostContent postContent) {
 
-        Page page = new Page("170337056170312", apiContext);
+        Page page = new Page(postContent.pageId(), apiContext);
 
         return Map.of(
-                "/home/michael/Documents/affiliate",
-                "A Complete Natural Pharmacy in Your Backyard"
+                postContent.directory(),
+                postContent.postMessage()
         )
                 .entrySet().stream()
                 .map(e -> {
@@ -542,13 +559,19 @@ public class AdCreativeService {
 
 //                        new Post("",apiContext).
                         return page.createFeed()
+                                .setLink("")
+                                //                                .setPicture()
+                                //                                .setCtaType("MESSAGE")
+                                //                                .setOgObjectId("101086373072062")
+                                //                                .setOgActionTypeId("1294635240572763")
                                 .setMessage(e.getValue())
-                                .setAttachedMedia(arrayBuilder.toString())
-                                .setPublished(true)
-                                .setFormatting(Page.EnumFormatting.VALUE_MARKDOWN)
+                                //                                .setAttachedMedia(arrayBuilder.toString())
+                                .setPublished(false)
+                                //                                .setFormatting(Page.EnumFormatting.VALUE_MARKDOWN)
                                 .execute().getId();
 
-                    } catch (APIException | IOException | InterruptedException ex) {
+                    } catch (Exception ex) {
+                        ex.printStackTrace();
                         throw new RuntimeException(ex);
                     }
 
@@ -748,7 +771,7 @@ public class AdCreativeService {
     }
 
     private APIRequest.ResponseWrapper getResponseWrapper(APIRequest.DefaultRequestExecutor defaultRequestExecutor, Map<String, Object> requestParams) throws APIException, IOException {
-        return defaultRequestExecutor.sendPost(" https://graph.facebook.com/v17.0/feed",
+        return defaultRequestExecutor.sendPost(" https://graph.facebook.com/v20.0/feed",
                 requestParams,
                 apiContext
         );

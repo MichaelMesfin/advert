@@ -8,6 +8,13 @@ public record CreateAdSetRequest(String campaignName,
 
                                  List<String> interest,
 
+
+                                 Budget budget,
+
+                                 AgeGroup ageGroup,
+
+                                 BidStrategy bidStrategy,
+
                                  String pageId
 
                                  ) {

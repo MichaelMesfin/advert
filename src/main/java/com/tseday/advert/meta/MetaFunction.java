@@ -1,5 +1,6 @@
 package com.tseday.advert.meta;
 
+import com.facebook.ads.sdk.Post;
 import com.tseday.advert.meta.dto.*;
 import com.tseday.advert.meta.service.AdCreativeService;
 import com.tseday.advert.meta.service.AdNetworkAnalysis;
@@ -53,7 +54,7 @@ public class MetaFunction {
     public Function<List<String>,Object> fetInterest(){
         return metaAdService::fetchInterest;
     }
-
+    
     @Bean
     public Supplier< List<Pair<String, String>> > fetchBehaviour(){
         return metaAdService::fetchBehaviours;
@@ -119,7 +120,7 @@ public class MetaFunction {
        return metaAdService::updateCampaign;
     }
 
-    @Bean Supplier<List<ProductDetails>> createProductItems(){
+    @Bean Function<List<ProductDetails>,List<ProductDetails>> createProductItems(){
         return metaAdService::createBatchProductItems;
     }
 
@@ -135,7 +136,7 @@ public class MetaFunction {
     }
 
     @Bean
-    Supplier<String> createVideoCollectionAd(){
+    Function<CanvasCollectionCreativeData,String> createVideoCollectionAd(){
         return adCreativeService::createVideoCollectionAds;
     }
 
@@ -150,10 +151,10 @@ public class MetaFunction {
         return metaAdService::createProductSet;
     }
 
-    @Bean
-    Supplier<String> createCanvasProductSet(){
-        return adCreativeService::createCollectionProductSet;
-    }
+//    @Bean
+//    Supplier<String> createCanvasProductSet(){
+//        return adCreativeService::createCollectionProductSet;
+//    }
 
     @Bean
     Supplier<List<String>> createCanvasElement(){
@@ -161,7 +162,7 @@ public class MetaFunction {
     }
 
     @Bean
-    Supplier<List<String>> createMultiPhotoPost(){
+    Function<PostContent,List<String>> createMultiPhotoPost(){
         return adCreativeService::createMultiPhotoPost;
     }
 
