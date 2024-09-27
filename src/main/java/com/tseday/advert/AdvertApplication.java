@@ -44,16 +44,20 @@ public class AdvertApplication {
 				.configure(SerializationFeature.FAIL_ON_EMPTY_BEANS, false)
 				.build();
 	}
-
-	@Bean
-	public StringTemplate.Processor<JsonObject, RuntimeException> jsonProcessor () {
-		return StringTemplate.Processor.of(
-				(StringTemplate stJSON) -> {
-					try (JsonReader jsonReader = Json.createReader(new StringReader(
-							stJSON.interpolate()))) {
-						return jsonReader.readObject();
-					}
-				}
-		);
-	}
+//
+//    /**
+//     *
+//     * @return
+//     */
+//    @Bean
+//	public StringTemplate.Processor<JsonObject, RuntimeException> jsonProcessor () {
+//		return StringTemplate.Processor.of(
+//				(StringTemplate stJSON) -> {
+//					try (JsonReader jsonReader = Json.createReader(new StringReader(
+//							stJSON.interpolate()))) {
+//						return jsonReader.readObject();
+//					}
+//				}
+//		);
+//	}
 }

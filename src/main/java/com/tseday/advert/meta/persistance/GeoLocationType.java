@@ -15,16 +15,16 @@ public enum GeoLocationType {
     REGION((l, a) -> Map.of("location_types", "[\"region\"]",
             "type", "adgeolocation",
             "limit","1000",
-            "country_code","US",
-//            "q",l,
+            "country_code","ET",
+            "q",l,
             "access_token", a)),
 
     CITY((l, a) -> Map.of("location_types", "[\"city\"]",
             "type", "adgeolocation",
             "limit", "1000",
-            "country_code", "US",
+            "country_code", "ET",
 //            "region_id",1034,
-            "q", "ET",
+            "q", l,
             "access_token", a));
 
     public Map<String, Object> getRequestParameters(String location, String accessToken) {

@@ -53,8 +53,8 @@ public class MetaAdService {
                          ObjectMapper objectMapper,
                          GeoLocationRepository geoLocationRepository,
                          TargetRepository targetRepository,
-                         CampaignRepository campaignRepository,
-                         @Qualifier("jsonProcessor") StringTemplate.Processor<jakarta.json.JsonObject, RuntimeException> json) {
+                         CampaignRepository campaignRepository
+                                 ) {
         this.apiContext = apiContext;
         adAccountAPIRequest = new APIRequest<>(apiContext, "me", "/adaccounts", "GET", AdAccount.getParser());
         this.objectMapper = objectMapper;
@@ -97,7 +97,7 @@ public class MetaAdService {
                     createCampaign()
                     .setName(createCampaignRequest.campaignName())
                     .setObjective(createCampaignRequest.objective())
-//                    .setPromotedObject("{\"product_catalog_id\":\"258227100404765\"}")
+                    .setPromotedObject("{\"product_catalog_id\":\"258227100404765\"}")
                     .setStatus(Campaign.EnumStatus.VALUE_PAUSED)
                     .setParam("special_ad_categories", "[]")
                     .execute().fetch();
@@ -151,7 +151,10 @@ public class MetaAdService {
             Map<String, List<Map<String, Object>>> geLocationDetail = objectMapper.readValue(responseWrapper.getBody(), Map.class);
 
 
-            return geLocationDetail.get("data");
+             return geLocationDetail.get("data")
+                   .stream()
+                   .filter(m -> m.get("type").equals("city"))
+                      .collect(Collectors.toList());
 //                    .stream()
 //                    .collect(Collectors.collectingAndThen(
 //                            Collectors.partitioningBy(d -> d.get("geo_hierarchy_level") == null),
@@ -205,9 +208,8 @@ public class MetaAdService {
 
     public List<Pair<String, String>> fetchIndustries() {
         List<String> matchList = List.of(
-                "6012903126783",
-                "6012903128783",
-                "6012903160983"
+                "6012901802383"
+             
         );
 
 
@@ -296,7 +298,7 @@ public class MetaAdService {
                         .addUploadFile(url.split("/")[4]
 
                                 , file)
-                        .execute().getFieldHash();
+                        .execute().getFieldUrl();
                 case VIDEO -> new AdAccount(accountId, apiContext).createAdVideo()
                         .setSource(file)
                         .execute()
@@ -313,7 +315,8 @@ public class MetaAdService {
         String endOffset = response.get("end_offset").getAsString();
 
         if (startOffset.equals(endOffset)) {
-            System.out.println(STR."start_offset = \{startOffset},  end_offset = \{endOffset}");
+//            System.out.println("start_offset = \{startOffset},  end_offset = \{endOffset}");
+            
             adAccount.createAdVideo().setUploadPhase(AdVideo.EnumUploadPhase.VALUE_FINISH)
                     .setUploadSessionId(uploadSessionId).execute();
         } else {
@@ -401,9 +404,7 @@ public class MetaAdService {
                     .filter(c -> c.getFieldName().equals(adSetRequest.campaignName()))
                     .findFirst().orElseThrow(() ->
                             new IllegalArgumentException(
-                                    STR."""
-                                    campaign \{adSetRequest.campaignName()} doesn't exist
-                                   """
+                                   String.format("campaing name %s doesnt exit ", adSetRequest.campaignName())
                             ));
 
             AdSet adSet = campaign.getAdSets().requestAllFields().execute()
@@ -412,9 +413,8 @@ public class MetaAdService {
                     .findFirst()
                     .orElseThrow(() ->
                             new IllegalArgumentException(
-                                    STR."""
-                                            adset \{adSetRequest.adSetName()} doesn't exist
-                                            """
+                                   String.format("adset name %s doesnt exit", adSetRequest.adSetName()
+                                   )
                             ));
 
             adSet.delete().execute();
@@ -454,14 +454,8 @@ public class MetaAdService {
     public String createAdSet(CreateAdSetRequest createAdSetRequest) {
         try {
             AdAccount adAccount = new AdAccount(accountId, apiContext);
-            
-            
-            List<String> countryCode = List.of("ET","AE","LB","BH","KW","SA","QA","JO",
-                    
-                    
-                    "OM","TR"
-            );
 
+            TargetingGeoLocation targetingGeoLocation;
             Campaign campaign = adAccount.getCampaigns().requestAllFields().execute().stream()
                     .filter(c -> c.getFieldName().equals(createAdSetRequest.campaignName()))
                     .findFirst().get();
@@ -469,40 +463,26 @@ public class MetaAdService {
             Pair<String, String> timeDuration = getTimeDuration();
 
             try (var executor = new StructuredTaskScope<>()) {
-//                StructuredTaskScope.Subtask<TargetingGeoLocation> targetingGeoLocationSubtask =
-//                        executor.fork(() -> getTargetingGeoLocation(createAdSetRequest));
-//
+                StructuredTaskScope.Subtask<TargetingGeoLocation> targetingGeoLocationSubtask =
+                        executor.fork(() -> getTargetingGeoLocation(createAdSetRequest));
+
 //                StructuredTaskScope.Subtask<List<Pair<String, String>>> industrySubtask = executor.fork(this::fetchIndustries);
 
 
-//                executor.join();
+                executor.join();
+                targetingGeoLocation = targetingGeoLocationSubtask.get();
 
-                List<Map<String, Object>> fetchedInterest = fetchInterest(createAdSetRequest.interest());
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
+            }
+
+
+
+            List<Map<String, Object>> fetchedInterest = fetchInterest(createAdSetRequest.interest());
                 List<IDName> fieldInterests = fetchedInterest.stream().flatMap(m -> m.entrySet().stream())
                         .map(m -> new IDName().setFieldId(m.getKey())
                                 .setFieldName(m.getValue().toString()))
                         .collect(Collectors.toList());
-
-//                TargetingGeoLocation targetingGeoLocation = new TargetingGeoLocation().setFieldRegions(
-//
-//                        List.of(
-//                                new TargetingGeoLocationRegion()
-//                                        .setFieldName("Tennessee")
-//                                        .setFieldKey("3885")
-//                                        .setFieldCountry("US"),
-//
-//                                new TargetingGeoLocationRegion()
-//                                        .setFieldName("Delaware")
-//                                        .setFieldKey("3850")
-//                                        .setFieldCountry("US"),
-//
-//                                new TargetingGeoLocationRegion()
-//                                        .setFieldName("Wisconsin")
-//                                        .setFieldKey("3892")
-//                                        .setFieldCountry("US")
-//                        )
-//
-//                );
 
 //                StructuredTaskScope.Subtask<List<Pair<String, String>>> behaviourSubTask = executor.fork(this::fetchBehaviours);
 
@@ -518,25 +498,26 @@ public class MetaAdService {
 
                 AdSet adSet = adAccount.createAdSet()
                         .setName(createAdSetRequest.adSetName())
-                        .setLifetimeBudget(2500L)
-                        .setBidAmount(2L)
+                        .setLifetimeBudget(createAdSetRequest.budget().totalAmount())
+                        .setBidAmount(createAdSetRequest.budget().bidAmount())
+//                        .setDailyBudget(createAdSetRequest.budget().dailyAmount())
                         .setStartTime(timeDuration.left())
                         .setEndTime(timeDuration.right())
-                        .setBillingEvent(AdSet.EnumBillingEvent.VALUE_LINK_CLICKS)
-                        .setOptimizationGoal(AdSet.EnumOptimizationGoal.VALUE_LINK_CLICKS)
+                        .setBillingEvent(AdSet.EnumBillingEvent.valueOf(createAdSetRequest.bidStrategy().billingEvent()))
+                        .setOptimizationGoal(AdSet.EnumOptimizationGoal.valueOf(createAdSetRequest.bidStrategy().optimizationGoal()))
                         .setCampaignId(campaign.getId())
-                        .setBidStrategy(AdSet.EnumBidStrategy.VALUE_LOWEST_COST_WITH_BID_CAP)
-                        .setDestinationType(AdSet.EnumDestinationType.VALUE_WEBSITE)
-//                        .setPromotedObject(
-//                                Map.of(
-//                                        "object_store_url", "https://amzn.to/3IoEl09"
-//                                )
-//
-//                        )
+                        .setBidStrategy(AdSet.EnumBidStrategy.valueOf(createAdSetRequest.bidStrategy().strategy()))
+//                        .setDestinationType(AdSet.EnumDestinationType.VALUE_MESSENGER)
+                        .setPromotedObject(
+                                Map.of(
+                                        "product_set_id", "1046107546983626"
+                                )
+
+                        )
                         .setTargeting(
                                 new Targeting()
-                                        .setFieldAgeMax(65L)
-                                        .setFieldAgeMin(18L)
+                                        .setFieldAgeMax(Long.valueOf(createAdSetRequest.ageGroup().maxAge()))
+                                        .setFieldAgeMin(Long.valueOf(createAdSetRequest.ageGroup().minAge()))
                                         .setFieldDevicePlatforms(
                                                 List.of(Targeting.EnumDevicePlatforms.VALUE_MOBILE,
                                                         
@@ -544,38 +525,13 @@ public class MetaAdService {
                                                         )
                                         )
                                         .setFieldFacebookPositions(List.of("feed", "facebook_reels"))
-                                        //                                        .setFieldInstagramPositions(List.of("reels","story"))
-                                        .setFieldFlexibleSpec(
-                                                List.of(
-                                                        new FlexibleTargeting().setFieldInterests(fieldInterests)
-                                                                .setFieldBehaviors(
-                                                                        List.of(
-                                                                                new IDName()
-                                                                                        .setFieldId("6018797165983")
-                                                                                        .setFieldName("Lived in Ethiopia (Formerly Expats - Ethiopia)"))
-                                                                )
-                                                ))
-                        
 
-                                                     
-
-
-//                                                , new FlexibleTargeting()
-//
-//                                                        .setFieldCustomAudiences(
-//                                                                List.of(
-//                                                                        new IDName().setFieldId("120202442429000117"),
-//                                                                        new IDName().setFieldId("120202415069930117")
-//                                                                )
-//                                                        )
-                                        
                                         .setFieldGenders(List.of(0L,1L))
-                                        .setFieldGeoLocations(
-                                                new TargetingGeoLocation()
-                                                        .setFieldCountries(countryCode)
-                                        )
-//                                        .setFieldRegions()
-//                                        .setFieldGeoLocations(targetingGeoLocation)
+                                        .setFieldInterests(fieldInterests)
+
+
+                                        .setFieldGeoLocations(targetingGeoLocation)
+
 //                                        .setFieldCustomAudiences(List.of(
 //                                                new RawCustomAudience().setFieldId("120202442429000117"),
 //                                                new RawCustomAudience().setFieldId("120202415069930117")
@@ -583,12 +539,13 @@ public class MetaAdService {
 //
                                         .setFieldPublisherPlatforms(List.of("facebook", "instagram"))
                         )
+
                         .setStatus(AdSet.EnumStatus.VALUE_PAUSED)
                         .execute();
                 return adSet.getId();
-            }
 
-        } catch (APIException e) {
+
+        } catch (Exception e) {
             e.printStackTrace();
             throw new RuntimeException(e);
         }
@@ -596,43 +553,51 @@ public class MetaAdService {
 
     @NotNull
     private TargetingGeoLocation getTargetingGeoLocation(CreateAdSetRequest createAdSetRequest) {
-        Map<Pair<String, Integer>, List<Map<String, Object>>> geoLocations = Collections.emptyMap();
 
-//                getGeoLocations(new LocationTargetRequest(null, null, "city"));
 
-        TargetingGeoLocation targetingGeoLocation = new TargetingGeoLocation();
+        List<String> city = createAdSetRequest.locationTargetRequest().city();
 
-        List<CityLocation> city = createAdSetRequest.locationTargetRequest().city();
+        List<Map<String, Object>> locations = getGeoLocations(new LocationTargetRequest("ethiopia", null, null));
 
-        List<String> region = createAdSetRequest.locationTargetRequest().region();
 
-        if (city != null && !city.isEmpty()) {
-            List<TargetingGeoLocationCity> targetingGeoLocationCities = geoLocations.values().stream().flatMap(List::stream)
-                    .filter(m -> city.contains(new CityLocation(m.get("region").toString(), m.get("name").toString())))
-                    .map(m -> new TargetingGeoLocationCity().setFieldKey(m.get("key").toString()).setFieldName(m.get("name").toString()))
-                    .collect(Collectors.toList());
-            targetingGeoLocation.setFieldCities(targetingGeoLocationCities);
-        } else {
-            List<TargetingGeoLocationRegion> targetingGeoLocationRegions;
-            if (region != null && !region.isEmpty()) {
-                targetingGeoLocationRegions = geoLocations.keySet().stream()
-                        .filter(s -> region.contains(s.left()))
-                        .map(s -> new TargetingGeoLocationRegion().setFieldKey(s.right().toString()).setFieldName(s.left()))
-                        .collect(Collectors.toList());
-            } else {
-                targetingGeoLocationRegions = geoLocations.keySet().stream()
-                        .map(s -> new TargetingGeoLocationRegion().setFieldKey(s.right().toString()).setFieldName(s.left())
-                        )
-                        .collect(Collectors.toList());
-            }
-            targetingGeoLocation.setFieldRegions(targetingGeoLocationRegions);
-        }
-        return targetingGeoLocation;
+        List<TargetingGeoLocationCity> geoLocationCities = locations.stream()
+                .filter(d -> d.get("type").equals("city"))
+                .filter(c -> city.contains(c.get("name").toString()))
+                .map(c -> new TargetingGeoLocationCity().setFieldKey(c.get("key").toString())
+                        .setFieldName(c.get("name").toString())
+
+                ).toList();
+
+        return new TargetingGeoLocation().setFieldCities(geoLocationCities);
+
+//
+//        if (city != null && !city.isEmpty()) {
+//            List<TargetingGeoLocationCity> targetingGeoLocationCities = geoLocations.values().stream().flatMap(List::stream)
+//                    .filter(m -> city.contains(new CityLocation(m.get("region").toString(), m.get("name").toString())))
+//                    .map(m -> new TargetingGeoLocationCity().setFieldKey(m.get("key").toString()).setFieldName(m.get("name").toString()))
+//                    .collect(Collectors.toList());
+//            targetingGeoLocation.setFieldCities(targetingGeoLocationCities);
+//        } else {
+//            List<TargetingGeoLocationRegion> targetingGeoLocationRegions;
+//            if (region != null && !region.isEmpty()) {
+//                targetingGeoLocationRegions = geoLocations.keySet().stream()
+//                        .filter(s -> region.contains(s.left()))
+//                        .map(s -> new TargetingGeoLocationRegion().setFieldKey(s.right().toString()).setFieldName(s.left()))
+//                        .collect(Collectors.toList());
+//            } else {
+//                targetingGeoLocationRegions = geoLocations.keySet().stream()
+//                        .map(s -> new TargetingGeoLocationRegion().setFieldKey(s.right().toString()).setFieldName(s.left())
+//                        )
+//                        .collect(Collectors.toList());
+//            }
+//            targetingGeoLocation.setFieldRegions(targetingGeoLocationRegions);
+//        }
+//        return targetingGeoLocation;
     }
 
     private Pair<String, String> getTimeDuration() {
 
-        LocalDateTime startTime = LocalDateTime.now().plusMinutes(30);
+        LocalDateTime startTime = LocalDateTime.now().plusHours(3);
 
         LocalDateTime endTime = startTime.plusDays(5);
 
@@ -760,14 +725,15 @@ public class MetaAdService {
                     .orElseThrow(() -> new IllegalArgumentException(String.format("adset with name s% doesn't exist",
                             createAdRequest.adSetName())));
 
+            
+            AdCreative adCreative = new AdCreative(createAdRequest.adCreativeId(),apiContext);
 
             Ad ad = adAccount
                     .createAd()
-
                     .setName(createAdRequest.adName())
                     .setAdsetId(adSetId)
-                    .setCreative(new AdCreative(createAdRequest.adCreativeId(), 
-                            apiContext))
+                    .setCreative(adCreative)
+
                     .setStatus(Ad.EnumStatus.VALUE_PAUSED)
                     .execute();
 
@@ -806,91 +772,91 @@ public class MetaAdService {
         );
     }
 
-    public List<ProductDetails> createBatchProductItems() {
+    public List<ProductDetails> createBatchProductItems(List<ProductDetails> prodcutDetails) {
 
 
         try (var executor = new StructuredTaskScope.ShutdownOnFailure()) {
             ProductCatalog productCatalog = new ProductCatalog(productCatalogId, apiContext);
 
-            List<StructuredTaskScope.Subtask<ProductDetails>> subtasks = Stream.of(
-
-                            new ProductDetails("Anua Heartleaf 77% Soothing Toner",
-                                    "1969",
-
-                                    "/home/michael/Documents/affiliate/amazon/1s.png",
-
-                                    STR."""
-                                            Under Eye Patches (20 Pairs) - Golden Under Eye Mask Amino Acid & Collagen,
-                                            Under Eye Mask for Face, Dark Circles and Puffiness, Beauty & Personal Care
-                                            """,
-                                    "https://amzn.to/3Sek0Ae"
-                            ),
-
-                            new ProductDetails("CeraVe Eye Repair Cream",
-                                    "1379",
-
-                                    "/home/michael/Documents/affiliate/amazon/2s.png",
-
-                                    STR."""
-                                            Under Eye Cream for Dark Circles and Puffiness
-                                            |Suitable for Delicate Skin Under Eye Area | 0.5 Ounce
-                                            """, "https://amzn.to/47zLXHj"
-                            ),
-
-                            new ProductDetails("TruSkin Naturals Vitamin C Face Serum",
-                                    "1977",
-
-                                    "/home/michael/Documents/affiliate/amazon/3s.png",
-
-                                    STR."""
-                                            Anti Aging Face & Eye Serum with Vitamin C,
-                                            Hyaluronic Acid, Vitamin E Brightening Serum, Dark Spot Remover, Even Skin Tone 1 Fl Oz
-                                            """,
-                                    "https://amzn.to/3vJ5uYk"
-                            ),
-
-                            new ProductDetails("CeraVe AM Facial Moisturizing Lotion",
-                                    "1449",
-
-                                    "/home/michael/Documents/affiliate/amazon/4s.png",
-
-                                    STR."""
-                                             SPF 30 | Oil-Free Face Moisturizer with Sunscreen | Non-Comedogenic | 3 Ounce
-                                            """,
-                                    "https://amzn.to/3vzTicv"
-                            ),
-
-                            new ProductDetails("Kitsch Dermaplaning Tool - Face Razors for Women",
-                                    "764",
-
-                                    "/home/michael/Documents/affiliate/amazon/5s.png",
-
-                                    STR."""
-                                            Eyebrow Razor & Face Shaver for Women | Facial Hair Removal for Women
-                                            """,
-                                    "https://amzn.to/47yr0MS"
-                            ),
-
-                            new ProductDetails("Under Eye Patches (20 Pairs)",
-                                    "1479",
-
-                                    "/home/michael/Documents/affiliate/amazon/6s.png",
-
-                                    STR."""
-                                            Golden Under Eye Mask Amino Acid & Collagen,
-                                             Under Eye Mask for Face, Dark Circles and Puffiness, Beauty & Personal Care
-                                            """,
-                                    "https://amzn.to/3Sh9CYF"
-                            )
-
-                    )
-
-                    .map(p -> executor.fork(() ->
-                            new ProductDetails(p.name(),
+            List<StructuredTaskScope.Subtask<ProductDetails>> subtasks = 
+//                    Stream.of(
+//
+//                            new ProductDetails("Anua Heartleaf 77% Soothing Toner",
+//                                    "1969",
+//
+//                                    "/home/michael/Documents/affiliate/amazon/1s.png",
+//
+//                                    STR."""
+//                                            Under Eye Patches (20 Pairs) - Golden Under Eye Mask Amino Acid & Collagen,
+//                                            Under Eye Mask for Face, Dark Circles and Puffiness, Beauty & Personal Care
+//                                            """,
+//                                    "https://amzn.to/3Sek0Ae"
+//                            ),
+//
+//                            new ProductDetails("CeraVe Eye Repair Cream",
+//                                    "1379",
+//
+//                                    "/home/michael/Documents/affiliate/amazon/2s.png",
+//
+//                                    STR."""
+//                                            Under Eye Cream for Dark Circles and Puffiness
+//                                            |Suitable for Delicate Skin Under Eye Area | 0.5 Ounce
+//                                            """, "https://amzn.to/47zLXHj"
+//                            ),
+//
+//                            new ProductDetails("TruSkin Naturals Vitamin C Face Serum",
+//                                    "1977",
+//
+//                                    "/home/michael/Documents/affiliate/amazon/3s.png",
+//
+//                                    STR."""
+//                                            Anti Aging Face & Eye Serum with Vitamin C,
+//                                            Hyaluronic Acid, Vitamin E Brightening Serum, Dark Spot Remover, Even Skin Tone 1 Fl Oz
+//                                            """,
+//                                    "https://amzn.to/3vJ5uYk"
+//                            ),
+//
+//                            new ProductDetails("CeraVe AM Facial Moisturizing Lotion",
+//                                    "1449",
+//
+//                                    "/home/michael/Documents/affiliate/amazon/4s.png",
+//
+//                                    STR."""
+//                                             SPF 30 | Oil-Free Face Moisturizer with Sunscreen | Non-Comedogenic | 3 Ounce
+//                                            """,
+//                                    "https://amzn.to/3vzTicv"
+//                            ),
+//
+//                            new ProductDetails("Kitsch Dermaplaning Tool - Face Razors for Women",
+//                                    "764",
+//
+//                                    "/home/michael/Documents/affiliate/amazon/5s.png",
+//
+//                                    STR."""
+//                                            Eyebrow Razor & Face Shaver for Women | Facial Hair Removal for Women
+//                                            """,
+//                                    "https://amzn.to/47yr0MS"
+//                            ),
+//
+//                            new ProductDetails("Under Eye Patches (20 Pairs)",
+//                                    "1479",
+//
+//                                    "/home/michael/Documents/affiliate/amazon/6s.png",
+//
+//                                    STR."""
+//                                            Golden Under Eye Mask Amino Acid & Collagen,
+//                                             Under Eye Mask for Face, Dark Circles and Puffiness, Beauty & Personal Care
+//                                            """,
+//                                    "https://amzn.to/3Sh9CYF"
+//                            )
+//
+//                    )
+                    prodcutDetails.stream()
+                            .map(p -> executor.fork(()
+                            -> new ProductDetails(p.name(),
                                     p.price(),
                                     createAdMedia(new AdMediaUpload(p.mainImage(), AdTypeEnum.IMAGE)),
                                     p.description(), p.url())
-
                     )).toList();
             executor.join().throwIfFailed();
 
@@ -907,8 +873,8 @@ public class MetaAdService {
 //                                            .setAdditionalImageUrls(p.additonalImages().subList(1, p.additonalImages().size()))
                                             .setAvailability(ProductItem.EnumAvailability.VALUE_IN_STOCK)
                                             .setDescription(p.description())
-                                            .setRetailerId(STR."ARCHANGLE\{Math.random()}")
-                                            .setBrand("amazon_items")
+                                            .setRetailerId("RICK".concat(String.valueOf(Math.random())))
+                                            .setBrand("zii")
                                             .setCurrency("USD")
                                             .setColor(p.description())
 //                                            .setCategory("c")
@@ -1139,10 +1105,9 @@ public class MetaAdService {
 
             return subtaskList.stream()
                     .map(StructuredTaskScope.Subtask::get)
-                    .map(p -> STR."""
-                                \{p.getFieldName()}
-                                \{p.getFieldOrderingIndex()}
-                                """).toList();
+
+                    .map(p -> String.format(" %s %d", p.getFieldName(),p.getFieldOrderingIndex()))
+                                .toList();
 
 
 //
